@@ -1,76 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import AppLayout from '../components/layout/AppLayout';
 
-import { updateDoc, doc } from 'firebase/firestore';
+import { updateDoc, deleteDoc, doc, onSnapshot, collection } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { useNotifications } from '../contexts/NotificationContext';
 import {
   SlidersHorizontal, Bell, Mail, MessageSquare, Bot,
   CheckCircle, Circle, Download, LayoutGrid, Info,
   ExternalLink, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
-// Initial alerts feed
-const INITIAL_ALERTS = [
-  {
-    id: 'a1',
-    severity: 'CRITICAL',
-    timestamp: ':22:01.342',
-    resource: 'NY-CORE-SVR-04',
-    title: 'Packet Loss Threshold Exceeded',
-    description: 'Current: 24.5% | Limit: 5.0%',
-    acquitted: false
-  },
-  {
-    id: 'a2',
-    severity: 'WARNING',
-    timestamp: ':19:44.102',
-    resource: 'UK-EDGE-RT-01',
-    title: 'BGP Flapping Detected',
-    description: '3 resets in the last 120 seconds.',
-    acquitted: false
-  },
-  {
-    id: 'a3',
-    severity: 'CRITICAL',
-    timestamp: ':18:12.001',
-    resource: 'DB-CLUSTER-P01',
-    title: 'Unresponsive Read Replica',
-    description: 'Health check failed for node p01-b.',
-    acquitted: false
-  },
-  {
-    id: 'a4',
-    severity: 'INFO',
-    timestamp: '14:15:33.910',
-    resource: 'NOC-SYS-MON',
-    title: 'Automated Backup Complete',
-    description: 'Success: 2.4TB migrated to S3 Vault.',
-    acquitted: true
-  },
-  {
-    id: 'a5',
-    severity: 'CRITICAL',
-    timestamp: ':10:55.221',
-    resource: 'ASIA-HK-EDGE',
-    title: 'DDoS Mitigation Triggered',
-    description: 'Traffic spike: +400% above baseline.',
-    acquitted: false
-  },
-  {
-    id: 'a6',
-    severity: 'WARNING',
-    timestamp: ':05:12.880',
-    resource: 'SVR-GEN-54',
-    title: 'Thermal Increase Detected',
-    description: 'Chassis temp: 38°C (Max: 40°C)',
-    acquitted: true
-  }
-];
-
 const ALERTS_PER_PAGE = 6;
 
+const formatDisplayValue = (value) => {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return value.toString();
+  if (value instanceof Date) return value.toLocaleString();
+  if (typeof value?.toDate === 'function') return value.toDate().toLocaleString();
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
+
 const AlertsPage = ({ equipments }) => {
-  const [alerts, setAlerts] = useState(INITIAL_ALERTS);
+  const { pushNotification } = useNotifications();
+  const [alerts, setAlerts] = useState([]);
   const [alertsPage, setAlertsPage] = useState(1);
   const [selectedEqId, setSelectedEqId] = useState('');
   const [thresholds, setThresholds] = useState({ cpu: 90, latency: 150, disk: 420 });
@@ -79,9 +34,67 @@ const AlertsPage = ({ equipments }) => {
   // Active critical count
   const criticalCount = alerts.filter(a => a.severity === 'CRITICAL' && !a.acquitted).length;
 
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'alerts'), (snapshot) => {
+      const fetchedAlerts = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          severity: data.severity || 'INFO',
+          timestamp: data.timestamp || '',
+          resource: data.resource || 'Unknown',
+          title: data.title || 'No title',
+          description: data.description || '',
+          acquitted: Boolean(data.acquitted)
+        };
+      });
+
+      const sortedAlerts = [...fetchedAlerts].sort((a, b) => {
+        const getSortableTimestamp = (value) => {
+          if (!value) return 0;
+          if (typeof value === 'number') return value;
+          if (value?.toDate) return value.toDate().getTime();
+          if (typeof value === 'string') {
+            const parsed = Number(String(value).replace(/[^0-9]/g, ''));
+            return Number.isNaN(parsed) ? 0 : parsed;
+          }
+          return 0;
+        };
+
+        return getSortableTimestamp(b.timestamp) - getSortableTimestamp(a.timestamp);
+      });
+
+      setAlerts(sortedAlerts);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // Acquit an alert
-  const handleAcquit = (id) => {
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, acquitted: true } : a));
+  const handleAcquit = async (id) => {
+    try {
+      await updateDoc(doc(db, 'alerts', id), { acquitted: true });
+      pushNotification({
+        title: 'Alerte acquittée',
+        message: 'L’alerte a été marquée comme acquittée.',
+        type: 'info'
+      });
+    } catch (err) {
+      console.error('Error updating alert:', err);
+    }
+  };
+
+  const handleTerminate = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'alerts', id));
+      pushNotification({
+        title: 'Alerte terminée',
+        message: 'L’alerte a été supprimée du flux.',
+        type: 'info'
+      });
+    } catch (err) {
+      console.error('Error deleting alert:', err);
+    }
   };
 
   // Load thresholds for selected equipment
@@ -89,10 +102,10 @@ const AlertsPage = ({ equipments }) => {
     if (selectedEqId) {
       const eq = equipments.find(e => e.id === selectedEqId);
       if (eq) {
-        setThresholds({ 
-          cpu: eq.cpu_threshold !== undefined ? eq.cpu_threshold : 90, 
-          latency: eq.latency_threshold !== undefined ? eq.latency_threshold : 150, 
-          disk: eq.disk_threshold !== undefined ? eq.disk_threshold : 420 
+        setThresholds({
+          cpu: eq.cpu_threshold !== undefined ? eq.cpu_threshold : 90,
+          latency: eq.latency_threshold !== undefined ? eq.latency_threshold : 150,
+          disk: eq.disk_threshold !== undefined ? eq.disk_threshold : 420
         });
       }
     }
@@ -364,7 +377,7 @@ const AlertsPage = ({ equipments }) => {
                       {alert.severity}
                     </span>
                   </td>
-                  <td style={{ fontFamily: 'monospace', fontSize: 11, color: '#64748b' }}>{alert.timestamp}</td>
+                  <td style={{ fontFamily: 'monospace', fontSize: 11, color: '#64748b' }}>{formatDisplayValue(alert.timestamp)}</td>
                   <td style={{ fontWeight: 600, color: '#1e293b', fontSize: 12 }}>{alert.resource}</td>
                   <td>
                     <div style={{ fontWeight: 600, color: alert.severity === 'CRITICAL' ? '#dc2626' : alert.severity === 'WARNING' ? '#d97706' : '#475569', fontSize: 13 }}>
@@ -387,6 +400,13 @@ const AlertsPage = ({ equipments }) => {
                           Acquitter
                         </button>
                       )}
+                      <button
+                        className="btn-acquit"
+                        style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}
+                        onClick={() => handleTerminate(alert.id)}
+                      >
+                        Terminer
+                      </button>
                       <button className="icon-btn" style={{ width: 28, height: 28 }}>
                         <ExternalLink size={13} color="#94a3b8" />
                       </button>

@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import AppLayout from '../components/layout/AppLayout';
 import Modal from '../components/ui/Modal';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { useNotifications } from '../contexts/NotificationContext';
 import {
   Plus, Edit2, Eye, Trash2, PauseCircle,
   Filter, Download, Server, CheckCircle, AlertTriangle, XCircle,
@@ -33,8 +34,64 @@ const EMPTY_FORM = {
   cpu_usage: '', ram_usage: '', uptime: '0d 0h 0m'
 };
 
+const getEquipmentCollection = (equipment) => equipment?.__collection__ || equipment?.collectionName || 'equipments';
+
+const formatDisplayValue = (value) => {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return value.toString();
+  if (value instanceof Date) return value.toLocaleString();
+  if (typeof value?.toDate === 'function') return value.toDate().toLocaleString();
+  if (Array.isArray(value)) return value.join(', ');
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
+
+const createAlertIfNeeded = async (equipmentData, notify = null) => {
+  const cpuUsage = Number(equipmentData.cpu_usage ?? 0);
+  const ramUsage = Number(equipmentData.ram_usage ?? 0);
+  const nodeLatency = Number(equipmentData.node_latency ?? equipmentData.latency ?? 0);
+  const cpuThreshold = Number.isFinite(Number(equipmentData.cpu_threshold)) ? Number(equipmentData.cpu_threshold) : 90;
+  const ramThreshold = Number.isFinite(Number(equipmentData.ram_threshold)) ? Number(equipmentData.ram_threshold) : 90;
+  const latencyThreshold = Number.isFinite(Number(equipmentData.latency_threshold)) ? Number(equipmentData.latency_threshold) : 150;
+
+  const shouldAlert = equipmentData.status === 'offline' || cpuUsage > cpuThreshold || ramUsage > ramThreshold || nodeLatency > latencyThreshold;
+
+  if (!shouldAlert) return null;
+
+  const severity = equipmentData.status === 'offline' ? 'CRITICAL' : 'WARNING';
+  const title = equipmentData.status === 'offline'
+    ? `Équipement hors ligne : ${equipmentData.name}`
+    : `Seuil dépassé sur ${equipmentData.name}`;
+  const description = equipmentData.status === 'offline'
+    ? `${equipmentData.name} (${equipmentData.ip}) est actuellement hors ligne.`
+    : `${equipmentData.name} (${equipmentData.ip}) dépasse les seuils : CPU ${cpuUsage}% / RAM ${ramUsage}% / Latence ${nodeLatency}ms.`;
+
+  await addDoc(collection(db, 'alerts'), {
+    equipment_id: equipmentData.id || '',
+    severity,
+    resource: equipmentData.type || 'Equipment',
+    title,
+    description,
+    timestamp: serverTimestamp(),
+    status: 'open',
+    acquitted: false
+  });
+
+  if (notify) {
+    notify({
+      title: severity === 'CRITICAL' ? 'Alerte critique' : 'Alerte de seuil',
+      message: description,
+      type: severity === 'CRITICAL' ? 'error' : 'warning'
+    });
+  }
+
+  return true;
+};
+
 const InventoryPage = ({ equipments, setEquipments }) => {
   const { isAdmin } = useAuth();
+  const { pushNotification } = useNotifications();
   const [currentPage, setCurrentPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -50,7 +107,6 @@ const InventoryPage = ({ equipments, setEquipments }) => {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // Filtered equipments
   const filtered = equipments.filter(eq => {
     const matchStatus = filterStatus === 'all' || eq.status === filterStatus;
     const matchSearch = !searchTerm ||
@@ -62,33 +118,39 @@ const InventoryPage = ({ equipments, setEquipments }) => {
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
   const paginated = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
-  // Stats
   const totalAssets = equipments.length;
   const onlineCount = equipments.filter(e => e.status === 'online').length;
   const alertCount = equipments.filter(e => e.status === 'warning').length;
   const criticalCount = equipments.filter(e => e.status === 'offline').length;
 
-  // Add equipment
   const handleAdd = async () => {
     try {
       const newEq = {
         ...form,
+        cpu_usage: Number(form.cpu_usage) || 0,
+        ram_usage: Number(form.ram_usage) || 0,
         lastSync: 'Just now',
         cpu_threshold: 90,
+        ram_threshold: 90,
         latency_threshold: 150,
         disk_threshold: 420
       };
-      await addDoc(collection(db, 'equipements'), newEq);
+      const createdDoc = await addDoc(collection(db, 'equipments'), newEq);
+      await createAlertIfNeeded({ ...newEq, id: createdDoc.id, __collection__: 'equipments' }, pushNotification);
       setShowAddModal(false);
       setForm(EMPTY_FORM);
       showNotif(`✅ Équipement "${newEq.name}" ajouté avec succès.`);
+      pushNotification({
+        title: 'Nouvel équipement',
+        message: `Équipement "${newEq.name}" ajouté avec succès.`,
+        type: 'info'
+      });
     } catch (err) {
       console.error("Error adding doc:", err);
       showNotif(`❌ Erreur lors de l'ajout`, 'warning');
     }
   };
 
-  // Edit equipment
   const openEdit = (eq) => {
     setSelectedEq(eq);
     setForm({ ...eq });
@@ -97,43 +159,73 @@ const InventoryPage = ({ equipments, setEquipments }) => {
 
   const handleEdit = async () => {
     try {
-      // Avoid passing 'id' inside the document data when updating
-      const { id, ...dataToUpdate } = form;
-      await updateDoc(doc(db, 'equipements', selectedEq.id), dataToUpdate);
+      const equipmentId = selectedEq?.id || form?.id;
+      if (!equipmentId) {
+        throw new Error('Aucun identifiant d’équipement disponible pour la modification.');
+      }
+
+      const equipmentCollection = getEquipmentCollection(selectedEq || form);
+      const { id, __collection__, ...dataToUpdate } = form;
+      const updatedEquipment = {
+        ...dataToUpdate,
+        cpu_usage: Number(dataToUpdate.cpu_usage) || 0,
+        ram_usage: Number(dataToUpdate.ram_usage) || 0,
+        cpu_threshold: Number.isFinite(Number(dataToUpdate.cpu_threshold)) ? Number(dataToUpdate.cpu_threshold) : 90,
+        ram_threshold: Number.isFinite(Number(dataToUpdate.ram_threshold)) ? Number(dataToUpdate.ram_threshold) : 90,
+        latency_threshold: Number.isFinite(Number(dataToUpdate.latency_threshold)) ? Number(dataToUpdate.latency_threshold) : 150
+      };
+
+      await updateDoc(doc(db, equipmentCollection, equipmentId), updatedEquipment);
+      await createAlertIfNeeded({ ...updatedEquipment, id: equipmentId, status: updatedEquipment.status, __collection__: equipmentCollection }, pushNotification);
       setShowEditModal(false);
       showNotif(`✅ Équipement "${form.name}" modifié avec succès.`);
+      pushNotification({
+        title: 'Équipement modifié',
+        message: `Équipement "${form.name}" mis à jour.`,
+        type: 'info'
+      });
     } catch (err) {
       console.error("Error updating doc:", err);
       showNotif(`❌ Erreur lors de la modification`, 'warning');
     }
   };
 
-  // Delete
   const handleDelete = async (id, name) => {
     if (window.confirm(`Supprimer "${name}" de l'inventaire ?`)) {
       try {
-        await deleteDoc(doc(db, 'equipements', id));
+        const equipment = equipments.find((eq) => eq.id === id);
+        const equipmentCollection = getEquipmentCollection(equipment);
+        await deleteDoc(doc(db, equipmentCollection, id));
         showNotif(`🗑️ Équipement "${name}" supprimé.`, 'warning');
+        pushNotification({
+          title: 'Équipement supprimé',
+          message: `Équipement "${name}" retiré de l’inventaire.`,
+          type: 'warning'
+        });
       } catch (err) {
         console.error("Error deleting doc:", err);
       }
     }
   };
 
-  // View details
   const openView = (eq) => {
     setSelectedEq(eq);
     setShowViewModal(true);
   };
 
-  // Maintenance mode
   const toggleMaintenance = async (id, name) => {
     const eq = equipments.find(e => e.id === id);
     if (!eq) return;
     const newStatus = eq.status === 'maintenance' ? 'online' : 'maintenance';
     try {
-      await updateDoc(doc(db, 'equipements', id), { status: newStatus });
+      const equipmentCollection = getEquipmentCollection(eq);
+      await updateDoc(doc(db, equipmentCollection, id), { status: newStatus });
       showNotif(`🔧 "${name}" passé en mode ${newStatus === 'maintenance' ? 'Maintenance' : 'Online'}.`);
+      pushNotification({
+        title: 'Changement de statut',
+        message: `"${name}" est maintenant en ${newStatus === 'maintenance' ? 'maintenance' : 'service'}.`,
+        type: newStatus === 'maintenance' ? 'warning' : 'info'
+      });
     } catch (err) {
       console.error("Error toggling maintenance:", err);
     }
@@ -174,7 +266,6 @@ const InventoryPage = ({ equipments, setEquipments }) => {
 
   return (
     <AppLayout title="Inventory" searchPlaceholder="Rechercher un actif ou une IP...">
-      {/* Notification toast */}
       {notification && (
         <div style={{
           position: 'fixed', top: 20, right: 20, zIndex: 300,
@@ -190,12 +281,10 @@ const InventoryPage = ({ equipments, setEquipments }) => {
         </div>
       )}
 
-      {/* Breadcrumb */}
       <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 16, display: 'flex', gap: 6 }}>
         <span>System Core</span><span>/</span><span style={{ color: '#475569', fontWeight: 500 }}>Inventory</span>
       </div>
 
-      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0f172a' }}>Gestion des Équipements</h1>
         <button
@@ -208,7 +297,6 @@ const InventoryPage = ({ equipments, setEquipments }) => {
         </button>
       </div>
 
-      {/* Stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
         {[
           { label: 'Total Assets', value: totalAssets, color: '#3b82f6', icon: Server },
@@ -234,9 +322,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
         ))}
       </div>
 
-      {/* Table card */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        {/* Toolbar */}
         <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10 }}>
           <button className="btn-secondary" id="filter-btn" style={{ fontSize: 12, padding: '7px 14px' }}>
             <Filter size={13} /> Filter
@@ -297,7 +383,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
                 <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{eq.ip}</td>
                 <td>{eq.type}</td>
                 <td style={{ color: eq.lastSync === '2 hours ago' ? '#ef4444' : '#64748b', fontWeight: eq.lastSync === '2 hours ago' ? 600 : 400 }}>
-                  {eq.lastSync}
+                  {formatDisplayValue(eq.lastSync)}
                 </td>
                 <td>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -344,7 +430,6 @@ const InventoryPage = ({ equipments, setEquipments }) => {
           </tbody>
         </table>
 
-        {/* Pagination */}
         <div style={{ padding: '14px 18px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'center' }}>
           <div className="pagination">
             <button className="page-btn" onClick={() => setCurrentPage(1)} disabled={currentPage === 1} id="page-first-btn"><ChevronFirst size={14} /></button>
@@ -376,7 +461,6 @@ const InventoryPage = ({ equipments, setEquipments }) => {
         </div>
       </div>
 
-      {/* Add Modal */}
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="➕ Ajouter un équipement">
         <EquipmentForm
           onSubmit={handleAdd}
@@ -387,7 +471,6 @@ const InventoryPage = ({ equipments, setEquipments }) => {
         />
       </Modal>
 
-      {/* Edit Modal */}
       <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title={`✏️ Modifier — ${selectedEq?.name}`}>
         <EquipmentForm
           onSubmit={handleEdit}
@@ -398,7 +481,6 @@ const InventoryPage = ({ equipments, setEquipments }) => {
         />
       </Modal>
 
-      {/* View Modal */}
       <Modal isOpen={showViewModal} onClose={() => setShowViewModal(false)} title={`👁️ Détails — ${selectedEq?.name}`}>
         {selectedEq && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -414,7 +496,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
             ].map(([k, v]) => (
               <div key={k} style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 14px' }}>
                 <div style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600, marginBottom: 3 }}>{k}</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{v}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{formatDisplayValue(v)}</div>
               </div>
             ))}
           </div>
@@ -425,7 +507,12 @@ const InventoryPage = ({ equipments, setEquipments }) => {
 };
 
 const EquipmentForm = ({ onSubmit, submitLabel, form, onChange, onCancel }) => (
-  <>
+  <form
+    onSubmit={(e) => {
+      e.preventDefault();
+      onSubmit();
+    }}
+  >
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
       <div className="form-group" style={{ gridColumn: '1/-1' }}>
         <label className="form-label">Nom de l'équipement</label>
@@ -465,11 +552,11 @@ const EquipmentForm = ({ onSubmit, submitLabel, form, onChange, onCancel }) => (
       <button type="button" className="btn-secondary" onClick={onCancel}>
         Annuler
       </button>
-      <button type="button" className="btn-primary" onClick={onSubmit} id="eq-form-submit-btn">
+      <button type="submit" className="btn-primary" id="eq-form-submit-btn">
         {submitLabel}
       </button>
     </div>
-  </>
+  </form>
 );
 
 export default InventoryPage;

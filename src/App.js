@@ -44,14 +44,22 @@ const AppInner = () => {
   const [equipments, setEquipments] = useState([]);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'equipements'), (snap) => {
-      const data = [];
-      snap.forEach(doc => {
-        data.push({ id: doc.id, ...doc.data() });
-      });
-      setEquipments(data);
-    });
-    return () => unsub();
+    const collectionsToWatch = ['equipments', 'equipements'];
+    const unsubscribers = collectionsToWatch.map((collectionName) =>
+      onSnapshot(collection(db, collectionName), (snap) => {
+        const incoming = [];
+        snap.forEach((doc) => {
+          incoming.push({ id: doc.id, ...doc.data(), __collection__: collectionName });
+        });
+
+        setEquipments((prev) => {
+          const withoutCollection = prev.filter((item) => item.__collection__ !== collectionName);
+          return [...withoutCollection, ...incoming];
+        });
+      })
+    );
+
+    return () => unsubscribers.forEach((unsub) => unsub());
   }, []);
 
   return (
