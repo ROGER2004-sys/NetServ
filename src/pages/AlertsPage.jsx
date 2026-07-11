@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import AppLayout from '../components/layout/AppLayout';
+import { useAuth } from '../contexts/AuthContext';
 
 import { updateDoc, deleteDoc, doc, onSnapshot, collection } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -24,6 +25,8 @@ const formatDisplayValue = (value) => {
 };
 
 const AlertsPage = ({ equipments }) => {
+  const { isAdmin, userProfile } = useAuth();
+  const canManageAlerts = isAdmin || String(userProfile?.role || '').toLowerCase().includes('technicien');
   const { pushNotification } = useNotifications();
   const [alerts, setAlerts] = useState([]);
   const [alertsPage, setAlertsPage] = useState(1);
@@ -72,6 +75,7 @@ const AlertsPage = ({ equipments }) => {
 
   // Acquit an alert
   const handleAcquit = async (id) => {
+    if (!canManageAlerts) return;
     try {
       await updateDoc(doc(db, 'alerts', id), { acquitted: true });
       pushNotification({
@@ -85,6 +89,7 @@ const AlertsPage = ({ equipments }) => {
   };
 
   const handleTerminate = async (id) => {
+    if (!canManageAlerts) return;
     try {
       await deleteDoc(doc(db, 'alerts', id));
       pushNotification({
@@ -215,7 +220,7 @@ const AlertsPage = ({ equipments }) => {
                 className="range-slider"
                 style={sliderStyle(thresholds.cpu, 100)}
                 value={thresholds.cpu}
-                disabled={!selectedEqId}
+                disabled={!selectedEqId || !isAdmin}
                 onChange={e => setThresholds(prev => ({ ...prev, cpu: Number(e.target.value) }))}
               />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8', marginTop: 4 }}>
@@ -241,7 +246,7 @@ const AlertsPage = ({ equipments }) => {
                 className="range-slider"
                 style={sliderStyle(thresholds.latency, 500)}
                 value={thresholds.latency}
-                disabled={!selectedEqId}
+                disabled={!selectedEqId || !isAdmin}
                 onChange={e => setThresholds(prev => ({ ...prev, latency: Number(e.target.value) }))}
               />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8', marginTop: 4 }}>
@@ -267,26 +272,32 @@ const AlertsPage = ({ equipments }) => {
                 className="range-slider"
                 style={sliderStyle(thresholds.disk, 1000)}
                 value={thresholds.disk}
-                disabled={!selectedEqId}
+                disabled={!selectedEqId || !isAdmin}
                 onChange={e => setThresholds(prev => ({ ...prev, disk: Number(e.target.value) }))}
               />
             </div>
 
             {/* Commit button */}
-            <button
-              id="commit-thresholds-btn"
-              onClick={handleCommit}
-              disabled={!selectedEqId}
-              style={{
-                width: '100%', padding: '11px',
-                background: !selectedEqId ? '#94a3b8' : 'linear-gradient(135deg, #0a1628, #1e3a6e)',
-                color: 'white', border: 'none', borderRadius: 8,
-                fontSize: 13, fontWeight: 700, cursor: !selectedEqId ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s'
-              }}
-            >
-              {commitSuccess ? '✅ Seuils enregistrés !' : 'Commit Threshold Changes'}
-            </button>
+            {isAdmin ? (
+              <button
+                id="commit-thresholds-btn"
+                onClick={handleCommit}
+                disabled={!selectedEqId}
+                style={{
+                  width: '100%', padding: '11px',
+                  background: !selectedEqId ? '#94a3b8' : 'linear-gradient(135deg, #0a1628, #1e3a6e)',
+                  color: 'white', border: 'none', borderRadius: 8,
+                  fontSize: 13, fontWeight: 700, cursor: !selectedEqId ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {commitSuccess ? '✅ Seuils enregistrés !' : 'Commit Threshold Changes'}
+              </button>
+            ) : (
+              <div style={{ marginTop: 8, color: '#475569', fontSize: 12, lineHeight: 1.4 }}>
+                Vous n'avez pas les droits pour modifier la logique de seuils.
+              </div>
+            )}
           </div>
 
           {/* Notification Channels */}
@@ -391,7 +402,7 @@ const AlertsPage = ({ equipments }) => {
                         <button className="btn-acquitted" id={`acquit-done-${alert.id}`}>
                           Acquitté
                         </button>
-                      ) : (
+                      ) : canManageAlerts ? (
                         <button
                           className="btn-acquit"
                           id={`acquit-${alert.id}-btn`}
@@ -399,14 +410,18 @@ const AlertsPage = ({ equipments }) => {
                         >
                           Acquitter
                         </button>
+                      ) : (
+                        <div style={{ color: '#64748b', fontSize: 12 }}>Lecture seule</div>
                       )}
-                      <button
-                        className="btn-acquit"
-                        style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}
-                        onClick={() => handleTerminate(alert.id)}
-                      >
-                        Terminer
-                      </button>
+                      {canManageAlerts && (
+                        <button
+                          className="btn-acquitt"
+                          style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}
+                          onClick={() => handleTerminate(alert.id)}
+                        >
+                          Terminer
+                        </button>
+                      )}
                       <button className="icon-btn" style={{ width: 28, height: 28 }}>
                         <ExternalLink size={13} color="#94a3b8" />
                       </button>

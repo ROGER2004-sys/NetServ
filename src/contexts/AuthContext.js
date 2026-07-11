@@ -90,6 +90,21 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Update profile
+  const updateUserProfile = async (updates) => {
+    if (!currentUser?.uid) {
+      throw new Error('Utilisateur non authentifié');
+    }
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      await setDoc(userRef, updates, { merge: true });
+      setUserProfile((prev) => ({ ...prev, ...updates }));
+    } catch (err) {
+      console.error('Error updating user profile:', err);
+      throw err;
+    }
+  };
+
   // Logout
   const logout = async () => {
     await signOut(auth);
@@ -119,6 +134,7 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
+    updateUserProfile,
     isAdmin: userProfile?.isAdmin === true
   };
 

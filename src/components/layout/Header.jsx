@@ -1,13 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bell, Settings, HelpCircle, Search, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 
 const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastructure, nodes, or IPs...' }) => {
-  const { userProfile, currentUser } = useAuth();
+  const { userProfile, currentUser, updateUserProfile } = useAuth();
   const { notifications } = useNotifications();
   const [searchVal, setSearchVal] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [displayNameValue, setDisplayNameValue] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  useEffect(() => {
+    setDisplayNameValue(userProfile?.displayName || currentUser?.email?.split('@')[0] || '');
+  }, [userProfile, currentUser]);
 
   const displayName = userProfile?.displayName || currentUser?.email?.split('@')[0] || 'User';
   const role = userProfile?.isAdmin ? 'Root Privilege' : (userProfile?.role || 'Operator');
@@ -112,8 +119,8 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
         </button>
 
         {/* User Avatar */}
-        <div className="user-avatar">
-          <div className="avatar-img">
+        <div className="user-avatar" style={{ cursor: 'pointer' }} onClick={() => setShowProfile(true)}>
+          <div className="avatar-img" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#cbd5e1', color: '#0f172a', fontWeight: 700, borderRadius: '50%' }}>
             {initials}
           </div>
           <div>
@@ -122,6 +129,74 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
           </div>
         </div>
       </div>
+
+      {showProfile && (
+        <div style={{
+          position: 'absolute', top: 70, right: 20,
+          width: 320,
+          background: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderRadius: 16,
+          boxShadow: '0 25px 70px rgba(15,23,42,0.12)',
+          zIndex: 5000,
+          padding: 20
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Mon profil</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>Modifier vos informations personnelles</div>
+            </div>
+            <button
+              className="icon-btn"
+              style={{ padding: 4 }}
+              onClick={() => setShowProfile(false)}
+              aria-label="Close profile"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Nom d'affichage</label>
+            <input
+              type="text"
+              value={displayNameValue}
+              onChange={(e) => setDisplayNameValue(e.target.value)}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1' }}
+            />
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, marginBottom: 6, color: '#475569' }}>Email</div>
+            <div style={{ padding: '10px 12px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155' }}>
+              {currentUser?.email || 'Non disponible'}
+            </div>
+          </div>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, marginBottom: 6, color: '#475569' }}>Rôle</div>
+            <div style={{ padding: '10px 12px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155' }}>
+              {role}
+            </div>
+          </div>
+          <button
+            className="btn-primary"
+            disabled={savingProfile || !displayNameValue.trim()}
+            onClick={async () => {
+              setSavingProfile(true);
+              try {
+                const updates = { displayName: displayNameValue.trim() };
+                await updateUserProfile(updates);
+                setShowProfile(false);
+              } catch (err) {
+                console.error('Error updating profile:', err);
+              } finally {
+                setSavingProfile(false);
+              }
+            }}
+            style={{ width: '100%', padding: '12px 14px', borderRadius: 10 }}
+          >
+            {savingProfile ? 'Enregistrement...' : 'Enregistrer'}
+          </button>
+        </div>
+      )}
     </header>
   );
 };
