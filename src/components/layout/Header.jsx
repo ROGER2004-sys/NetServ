@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Settings, HelpCircle, Search, X, Mail, UserCircle2, Briefcase, Phone, ShieldCheck, FileText } from 'lucide-react';
+import { Bell, Settings, HelpCircle, Search, X, Mail, UserCircle2, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 
@@ -11,18 +11,12 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
   const [showProfile, setShowProfile] = useState(false);
   const [displayNameValue, setDisplayNameValue] = useState('');
   const [emailValue, setEmailValue] = useState('');
-  const [phoneValue, setPhoneValue] = useState('');
-  const [departmentValue, setDepartmentValue] = useState('');
-  const [bioValue, setBioValue] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMessage, setProfileMessage] = useState('');
 
   useEffect(() => {
     setDisplayNameValue(userProfile?.displayName || currentUser?.email?.split('@')[0] || '');
     setEmailValue(userProfile?.email || currentUser?.email || '');
-    setPhoneValue(userProfile?.phone || '');
-    setDepartmentValue(userProfile?.department || '');
-    setBioValue(userProfile?.bio || '');
   }, [userProfile, currentUser]);
 
   const displayName = userProfile?.displayName || currentUser?.email?.split('@')[0] || 'User';
@@ -199,34 +193,6 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Téléphone</label>
-              <div style={{ position: 'relative' }}>
-                <Phone size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                <input
-                  type="text"
-                  value={phoneValue}
-                  onChange={(e) => setPhoneValue(e.target.value)}
-                  placeholder="Ex. +33 6 12 34 56 78"
-                  style={{ width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10, border: '1px solid #cbd5e1' }}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Département</label>
-              <div style={{ position: 'relative' }}>
-                <Briefcase size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                <input
-                  type="text"
-                  value={departmentValue}
-                  onChange={(e) => setDepartmentValue(e.target.value)}
-                  placeholder="Réseaux, Sécurité, Support..."
-                  style={{ width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10, border: '1px solid #cbd5e1' }}
-                />
-              </div>
-            </div>
-
-            <div>
               <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Rôle</label>
               <div style={{ position: 'relative' }}>
                 <ShieldCheck size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
@@ -235,20 +201,6 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
                   value={userProfile?.role || role}
                   readOnly
                   style={{ width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#334155' }}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Biographie</label>
-              <div style={{ position: 'relative' }}>
-                <FileText size={15} style={{ position: 'absolute', left: 12, top: 12, color: '#94a3b8' }} />
-                <textarea
-                  value={bioValue}
-                  onChange={(e) => setBioValue(e.target.value)}
-                  rows={3}
-                  placeholder="Décrivez votre mission ou votre expertise"
-                  style={{ width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10, border: '1px solid #cbd5e1', resize: 'vertical' }}
                 />
               </div>
             </div>
@@ -263,13 +215,13 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
               try {
                 const updates = {
                   displayName: displayNameValue.trim(),
-                  email: emailValue.trim().toLowerCase(),
-                  phone: phoneValue.trim(),
-                  department: departmentValue.trim(),
-                  bio: bioValue.trim()
+                  email: emailValue.trim().toLowerCase()
                 };
                 await updateUserProfile(updates);
                 setProfileMessage('Profil mis à jour avec succès.');
+                setTimeout(() => {
+                  setProfileMessage('');
+                }, 3000);
               } catch (err) {
                 console.error('Error updating profile:', err);
                 setProfileMessage('Impossible de mettre à jour le profil pour le moment.');
@@ -279,7 +231,7 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
             }}
             style={{ width: '100%', padding: '12px 14px', borderRadius: 10, marginTop: 16 }}
           >
-            {savingProfile ? 'Enregistrement...' : 'Enregistrer les modifications'}
+            {savingProfile ? 'Enregistrement...' : 'Modifier'}
           </button>
         </div>
       )}

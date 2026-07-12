@@ -9,7 +9,7 @@ import {
 } from 'recharts';
 import {
   Server, Activity, Shield, AlertTriangle,
-  MoreVertical, TrendingUp, TrendingDown
+  TrendingUp, TrendingDown
 } from 'lucide-react';
 
 // Export context so other pages can share equipment state
@@ -32,39 +32,63 @@ const generateLatencyData = () => {
 const DashboardPage = ({ equipments, setEquipments }) => {
   const [latencyData, setLatencyData] = useState(generateLatencyData());
   const [latencyPeriod, setLatencyPeriod] = useState('24H');
-  const [cpuData, setCpuData] = useState([]);
+  const [filterStatus, setFilterStatus] = useState('all');
 
   // Computed KPIs from equipments state
   const totalNodes = equipments.length;
   const onlineNodes = equipments.filter(e => e.status === 'online').length;
   const warningNodes = equipments.filter(e => e.status === 'warning').length;
   const offlineNodes = equipments.filter(e => e.status === 'offline').length;
+  const maintenanceNodes = equipments.filter(e => e.status === 'maintenance').length;
   const activeAlerts = warningNodes + offlineNodes;
-  const avgCpu = totalNodes > 0 ? Math.round(equipments.reduce((s, e) => s + (e.cpu_usage || 0), 0) / totalNodes) : 0;
-  const throughput = (42.5 + (Math.random() * 2 - 1)).toFixed(1);
-  const systemHealth = totalNodes > 0 ? ((onlineNodes / totalNodes) * 100).toFixed(2) : "0.00";
 
-  // Simulate live data updates (latency and cpu fluctuation)
+  // CPU data dynamic computation
+  const abbreviate = (name) => {
+    if (!name) return 'UNK';
+    const p = name.split(/[-_ ]/);
+    if (p.length > 1) {
+      return (p[0].substring(0, 2) + p[1].charAt(0)).toUpperCase();
+    }
+    return name.substring(0, 3).toUpperCase();
+  };
+
+  const cpuData = equipments.map(eq => {
+    const rawName = eq.nom || eq.name || 'Generic';
+    return {
+      name: abbreviate(rawName),
+      fullName: rawName,
+      value: Number(eq.cpu) || Number(eq.cpu_usage) || 0
+    };
+  });
+  const avgCpu = totalNodes > 0 ? Math.round(cpuData.reduce((s, e) => s + e.value, 0) / totalNodes) : 0;
+
+  const avgRam = totalNodes > 0 ? Math.round(equipments.reduce((s, e) => s + (Number(e.ram) || Number(e.ram_usage) || 0), 0) / totalNodes) : 0;
+
+  const throughput = (42.5 + (Math.random() * 2 - 1)).toFixed(1);
+
+  // System Health Computation
+  let systemHealthScore = 100;
+  if (avgCpu >= 80) {
+    const cpuPenalty = ((avgCpu - 80) / 20) * 25;
+    systemHealthScore -= cpuPenalty;
+  }
+  systemHealthScore -= (10 * activeAlerts); // 10% penalty per active alert
+  systemHealthScore = Math.max(0, systemHealthScore);
+
+  let healthColor = '#22c55e'; // Green
+  if (systemHealthScore <= 75) {
+    healthColor = '#ef4444'; // Red
+  } else if (systemHealthScore <= 89) {
+    healthColor = '#f97316'; // Orange
+  }
+
+  // Simulate live data updates (latency)
   useEffect(() => {
     const interval = setInterval(() => {
       setLatencyData(generateLatencyData());
-      
-      // Update CPU Data based on real equipment data + small fluctuation
-      if (equipments.length > 0) {
-        const newCpuData = equipments.slice(0, 8).map((eq) => {
-          const fluctuation = Math.floor(Math.random() * 6) - 3; // -3 to +2
-          let val = (eq.cpu_usage || 0) + fluctuation;
-          if (val < 0) val = 0;
-          if (val > 100) val = 100;
-          return { name: eq.name.substring(0, 8), value: val };
-        });
-        setCpuData(newCpuData);
-      } else {
-        setCpuData([]);
-      }
     }, 2000); // 2 second interval for live feel
     return () => clearInterval(interval);
-  }, [equipments]);
+  }, []);
 
   const getStatusClass = (status) => {
     if (status === 'online') return 'status-online';
@@ -127,17 +151,17 @@ const DashboardPage = ({ equipments, setEquipments }) => {
         <div className="kpi-card">
           <div>
             <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 500, marginBottom: 4 }}>System Health</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: Number(systemHealth) < 99.9 ? '#ef4444' : '#0f172a' }}>{systemHealth}%</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: healthColor }}>{systemHealthScore.toFixed(0)}%</div>
             <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
               <span>⊙</span> Target: 99.99%
             </div>
           </div>
           <div style={{
             width: 44, height: 44, borderRadius: 10,
-            background: Number(systemHealth) < 99.9 ? 'linear-gradient(135deg, #ef444422, #ef444411)' : 'linear-gradient(135deg, #14b8a622, #14b8a611)',
+            background: `linear-gradient(135deg, ${healthColor}22, ${healthColor}11)`,
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}>
-            <Shield size={22} color={Number(systemHealth) < 99.9 ? '#ef4444' : '#14b8a6'} />
+            <Shield size={22} color={healthColor} />
           </div>
         </div>
 
@@ -240,12 +264,19 @@ const DashboardPage = ({ equipments, setEquipments }) => {
             <ResponsiveContainer width="100%" height={110}>
               <BarChart data={cpuData} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tick={false} axisLine={false} />
-                <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v) => [`${v}%`, 'CPU']} />
+                <YAxis domain={[0, 100]} tick={false} axisLine={false} />
+                <Tooltip 
+                  contentStyle={{ fontSize: 11, borderRadius: 8 }} 
+                  formatter={(v) => [`${v}%`, 'CPU']} 
+                  labelFormatter={(label, payload) => payload?.[0]?.payload?.fullName || label} 
+                />
                 <Bar dataKey="value" radius={[3, 3, 0, 0]}>
-                  {cpuData.map((entry, i) => (
-                    <Cell key={i} fill={entry.value > 80 ? '#ef4444' : '#22c55e'} />
-                  ))}
+                  {cpuData.map((entry, i) => {
+                    let barColor = '#22c55e'; // Green
+                    if (entry.value >= 90) barColor = '#ef4444'; // Red
+                    else if (entry.value >= 76) barColor = '#f97316'; // Orange
+                    return <Cell key={i} fill={barColor} />;
+                  })}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -257,20 +288,16 @@ const DashboardPage = ({ equipments, setEquipments }) => {
           {/* RAM Utilization */}
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>RAM Utilization</h3>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#f97316' }}>68.2 GB</span>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>RAM Utilization (Moyenne)</h3>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#f97316' }}>{avgRam}%</span>
             </div>
             <div style={{ background: '#e2e8f0', borderRadius: 4, height: 10, marginBottom: 10, overflow: 'hidden' }}>
-              <div style={{ width: '70%', height: '100%', background: 'linear-gradient(90deg, #1e3a6e, #3b82f6)', borderRadius: 4 }} />
+              <div style={{ width: `${avgRam}%`, height: '100%', background: 'linear-gradient(90deg, #1e3a6e, #3b82f6)', borderRadius: 4 }} />
             </div>
             <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#64748b' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#1e3a6e', display: 'inline-block' }} />
-                System (45%)
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#e2e8f0', display: 'inline-block' }} />
-                Cache (25%)
+                Moyenne globale sur {totalNodes} équipement(s)
               </span>
             </div>
           </div>
@@ -289,13 +316,31 @@ const DashboardPage = ({ equipments, setEquipments }) => {
               <span className="live-dot" style={{ marginRight: 5 }} />
               <strong>{onlineNodes}</strong> Online
             </div>
+            <div style={{ background: '#ffedd5', border: '1px solid #fed7aa', borderRadius: 6, padding: '5px 12px', fontSize: 12 }}>
+              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#f97316', marginRight: 5 }} />
+              <strong>{warningNodes}</strong> Warning
+            </div>
             <div style={{ background: '#fee2e2', border: '1px solid #fecaca', borderRadius: 6, padding: '5px 12px', fontSize: 12 }}>
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#ef4444', marginRight: 5 }} />
-              <strong>{offlineNodes + warningNodes}</strong> Error
+              <strong>{offlineNodes}</strong> Offline
             </div>
-            <button className="btn-primary" id="filter-view-btn" style={{ padding: '6px 14px', fontSize: 12 }}>
-              ≡ Filter View
-            </button>
+            <div style={{ background: '#e0e7ff', border: '1px solid #c7d2fe', borderRadius: 6, padding: '5px 12px', fontSize: 12 }}>
+              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#6366f1', marginRight: 5 }} />
+              <strong>{maintenanceNodes}</strong> Maint.
+            </div>
+            <select
+              className="btn-primary"
+              id="filter-view-select"
+              style={{ padding: '6px 24px 6px 14px', fontSize: 12, cursor: 'pointer', outline: 'none' }}
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
+              <option value="all" style={{ color: '#0f172a', background: '#fff' }}>≡ Filter View</option>
+              <option value="online" style={{ color: '#0f172a', background: '#fff' }}>Online</option>
+              <option value="offline" style={{ color: '#0f172a', background: '#fff' }}>Offline</option>
+              <option value="warning" style={{ color: '#0f172a', background: '#fff' }}>Warning</option>
+              <option value="maintenance" style={{ color: '#0f172a', background: '#fff' }}>Maintenance</option>
+            </select>
           </div>
         </div>
 
@@ -307,51 +352,54 @@ const DashboardPage = ({ equipments, setEquipments }) => {
               <th>LOAD (CPU/RAM)</th>
               <th>UPTIME</th>
               <th>STATUS</th>
-              <th>ACTIONS</th>
+              <th>TYPE</th>
             </tr>
           </thead>
           <tbody>
-            {equipments.slice(0, 8).map(eq => (
-              <tr key={eq.id}>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{
-                      width: 28, height: 28, borderRadius: 6, background: '#f1f5f9',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center'
-                    }}>
-                      <Server size={14} color="#64748b" />
+            {equipments
+              .filter(eq => filterStatus === 'all' || eq.status === filterStatus)
+              .slice(0, 8)
+              .map(eq => (
+                <tr key={eq.id}>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: 6, background: '#f1f5f9',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>
+                        <Server size={14} color="#64748b" />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 13 }}>{eq.name}</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8' }}>{eq.type}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 13 }}>{eq.name}</div>
-                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{eq.type}</div>
+                  </td>
+                  <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{eq.ip}</td>
+                  <td>
+                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>
+                      CPU: {eq.cpu_usage}% &nbsp;&nbsp; RAM: {eq.ram_usage}%
                     </div>
-                  </div>
-                </td>
-                <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{eq.ip}</td>
-                <td>
-                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>
-                    CPU: {eq.cpu_usage}% &nbsp;&nbsp; RAM: {eq.ram_usage}%
-                  </div>
-                  <div style={{ background: '#e2e8f0', borderRadius: 2, height: 4, width: 100, overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${eq.cpu_usage}%`, height: '100%',
-                      background: eq.cpu_usage > 80 ? '#ef4444' : '#22c55e', borderRadius: 2
-                    }} />
-                  </div>
-                </td>
-                <td style={{ fontSize: 12 }}>{eq.uptime}</td>
-                <td>
-                  <span className={`status-badge ${getStatusClass(eq.status)}`}>
-                    {eq.status === 'online' && '●'} {eq.status.toUpperCase()}
-                  </span>
-                </td>
-                <td>
-                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
-                    <MoreVertical size={16} />
-                  </button>
-                </td>
-              </tr>
-            ))}
+                    <div style={{ background: '#e2e8f0', borderRadius: 2, height: 4, width: 100, overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${eq.cpu_usage}%`, height: '100%',
+                        background: eq.cpu_usage > 80 ? '#ef4444' : '#22c55e', borderRadius: 2
+                      }} />
+                    </div>
+                  </td>
+                  <td style={{ fontSize: 12 }}>{eq.uptime}</td>
+                  <td>
+                    <span className={`status-badge ${getStatusClass(eq.status)}`}>
+                      {eq.status === 'online' && '●'} {eq.status.toUpperCase()}
+                    </span>
+                  </td>
+                  <td>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                      {eq.type}
+                    </span>
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
