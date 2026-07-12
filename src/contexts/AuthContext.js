@@ -3,10 +3,12 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signOut
+  signOut,
+  updateEmail as firebaseUpdateEmail
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
+import { sanitizeProfileUpdates } from '../services/userProfileService';
 
 const AuthContext = createContext(null);
 
@@ -74,7 +76,7 @@ export const AuthProvider = ({ children }) => {
       const userRef = doc(db, 'users', result.user.uid);
       const profile = {
         uid: result.user.uid,
-        email,
+        email: email.toLowerCase(),
         displayName: displayName || email.split('@')[0],
         role,
         isAdmin: false,
@@ -95,10 +97,18 @@ export const AuthProvider = ({ children }) => {
     if (!currentUser?.uid) {
       throw new Error('Utilisateur non authentifié');
     }
+
+    const sanitized = sanitizeProfileUpdates(updates);
+
     try {
+      if (sanitized.email && sanitized.email !== currentUser.email?.toLowerCase()) {
+        await firebaseUpdateEmail(currentUser, sanitized.email);
+      }
+
       const userRef = doc(db, 'users', currentUser.uid);
-      await setDoc(userRef, updates, { merge: true });
-      setUserProfile((prev) => ({ ...prev, ...updates }));
+      await setDoc(userRef, sanitized, { merge: true });
+      setUserProfile((prev) => ({ ...prev, ...sanitized }));
+      setCurrentUser((prev) => prev ? { ...prev, email: sanitized.email || prev.email } : prev);
     } catch (err) {
       console.error('Error updating user profile:', err);
       throw err;
@@ -121,6 +131,7 @@ export const AuthProvider = ({ children }) => {
       case 'auth/weak-password': return 'Le mot de passe doit contenir au moins 6 caractères.';
       case 'auth/invalid-credential': return 'Email ou mot de passe incorrect.';
       case 'auth/too-many-requests': return 'Trop de tentatives. Réessayez plus tard.';
+      case 'auth/requires-recent-login': return 'Cette opération nécessite une reconnexion récente.';
       default: return 'Une erreur est survenue. Vérifiez votre connexion.';
     }
   };

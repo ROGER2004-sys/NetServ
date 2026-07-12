@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Settings, HelpCircle, Search, X } from 'lucide-react';
+import { Bell, Settings, HelpCircle, Search, X, Mail, UserCircle2, Briefcase, Phone, ShieldCheck, FileText } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 
@@ -10,10 +10,19 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [displayNameValue, setDisplayNameValue] = useState('');
+  const [emailValue, setEmailValue] = useState('');
+  const [phoneValue, setPhoneValue] = useState('');
+  const [departmentValue, setDepartmentValue] = useState('');
+  const [bioValue, setBioValue] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
+  const [profileMessage, setProfileMessage] = useState('');
 
   useEffect(() => {
     setDisplayNameValue(userProfile?.displayName || currentUser?.email?.split('@')[0] || '');
+    setEmailValue(userProfile?.email || currentUser?.email || '');
+    setPhoneValue(userProfile?.phone || '');
+    setDepartmentValue(userProfile?.department || '');
+    setBioValue(userProfile?.bio || '');
   }, [userProfile, currentUser]);
 
   const displayName = userProfile?.displayName || currentUser?.email?.split('@')[0] || 'User';
@@ -133,18 +142,18 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
       {showProfile && (
         <div style={{
           position: 'absolute', top: 70, right: 20,
-          width: 320,
+          width: 360,
           background: '#ffffff',
           border: '1px solid #e2e8f0',
-          borderRadius: 16,
+          borderRadius: 18,
           boxShadow: '0 25px 70px rgba(15,23,42,0.12)',
           zIndex: 5000,
           padding: 20
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Mon profil</div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>Modifier vos informations personnelles</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Profil utilisateur</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>Gérez vos informations professionnelles</div>
             </div>
             <button
               className="icon-btn"
@@ -155,45 +164,122 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
               <X size={16} />
             </button>
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Nom d'affichage</label>
-            <input
-              type="text"
-              value={displayNameValue}
-              onChange={(e) => setDisplayNameValue(e.target.value)}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1' }}
-            />
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, marginBottom: 6, color: '#475569' }}>Email</div>
-            <div style={{ padding: '10px 12px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155' }}>
-              {currentUser?.email || 'Non disponible'}
+
+          {profileMessage && (
+            <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: '#ecfdf3', color: '#047857', fontSize: 12 }}>
+              {profileMessage}
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Nom d'affichage</label>
+              <div style={{ position: 'relative' }}>
+                <UserCircle2 size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input
+                  type="text"
+                  value={displayNameValue}
+                  onChange={(e) => setDisplayNameValue(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10, border: '1px solid #cbd5e1' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Email</label>
+              <div style={{ position: 'relative' }}>
+                <Mail size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input
+                  type="email"
+                  value={emailValue}
+                  onChange={(e) => setEmailValue(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10, border: '1px solid #cbd5e1' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Téléphone</label>
+              <div style={{ position: 'relative' }}>
+                <Phone size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input
+                  type="text"
+                  value={phoneValue}
+                  onChange={(e) => setPhoneValue(e.target.value)}
+                  placeholder="Ex. +33 6 12 34 56 78"
+                  style={{ width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10, border: '1px solid #cbd5e1' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Département</label>
+              <div style={{ position: 'relative' }}>
+                <Briefcase size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input
+                  type="text"
+                  value={departmentValue}
+                  onChange={(e) => setDepartmentValue(e.target.value)}
+                  placeholder="Réseaux, Sécurité, Support..."
+                  style={{ width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10, border: '1px solid #cbd5e1' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Rôle</label>
+              <div style={{ position: 'relative' }}>
+                <ShieldCheck size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input
+                  type="text"
+                  value={userProfile?.role || role}
+                  readOnly
+                  style={{ width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#334155' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Biographie</label>
+              <div style={{ position: 'relative' }}>
+                <FileText size={15} style={{ position: 'absolute', left: 12, top: 12, color: '#94a3b8' }} />
+                <textarea
+                  value={bioValue}
+                  onChange={(e) => setBioValue(e.target.value)}
+                  rows={3}
+                  placeholder="Décrivez votre mission ou votre expertise"
+                  style={{ width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10, border: '1px solid #cbd5e1', resize: 'vertical' }}
+                />
+              </div>
             </div>
           </div>
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, marginBottom: 6, color: '#475569' }}>Rôle</div>
-            <div style={{ padding: '10px 12px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155' }}>
-              {role}
-            </div>
-          </div>
+
           <button
             className="btn-primary"
-            disabled={savingProfile || !displayNameValue.trim()}
+            disabled={savingProfile || !displayNameValue.trim() || !emailValue.trim()}
             onClick={async () => {
               setSavingProfile(true);
+              setProfileMessage('');
               try {
-                const updates = { displayName: displayNameValue.trim() };
+                const updates = {
+                  displayName: displayNameValue.trim(),
+                  email: emailValue.trim().toLowerCase(),
+                  phone: phoneValue.trim(),
+                  department: departmentValue.trim(),
+                  bio: bioValue.trim()
+                };
                 await updateUserProfile(updates);
-                setShowProfile(false);
+                setProfileMessage('Profil mis à jour avec succès.');
               } catch (err) {
                 console.error('Error updating profile:', err);
+                setProfileMessage('Impossible de mettre à jour le profil pour le moment.');
               } finally {
                 setSavingProfile(false);
               }
             }}
-            style={{ width: '100%', padding: '12px 14px', borderRadius: 10 }}
+            style={{ width: '100%', padding: '12px 14px', borderRadius: 10, marginTop: 16 }}
           >
-            {savingProfile ? 'Enregistrement...' : 'Enregistrer'}
+            {savingProfile ? 'Enregistrement...' : 'Enregistrer les modifications'}
           </button>
         </div>
       )}

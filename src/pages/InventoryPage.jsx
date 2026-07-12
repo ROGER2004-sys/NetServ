@@ -34,7 +34,7 @@ const EMPTY_FORM = {
   cpu_usage: '', ram_usage: '', uptime: '0d 0h 0m'
 };
 
-const getEquipmentCollection = (equipment) => equipment?.__collection__ || equipment?.collectionName || 'equipments';
+const EQUIPMENT_COLLECTION = 'equipements';
 
 const formatDisplayValue = (value) => {
   if (value === null || value === undefined || value === '') return '—';
@@ -135,8 +135,8 @@ const InventoryPage = ({ equipments, setEquipments }) => {
         latency_threshold: 150,
         disk_threshold: 420
       };
-      const createdDoc = await addDoc(collection(db, 'equipments'), newEq);
-      await createAlertIfNeeded({ ...newEq, id: createdDoc.id, __collection__: 'equipments' }, pushNotification);
+      const createdDoc = await addDoc(collection(db, EQUIPMENT_COLLECTION), newEq);
+      await createAlertIfNeeded({ ...newEq, id: createdDoc.id, __collection__: EQUIPMENT_COLLECTION }, pushNotification);
       setShowAddModal(false);
       setForm(EMPTY_FORM);
       showNotif(`✅ Équipement "${newEq.name}" ajouté avec succès.`);
@@ -164,7 +164,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
         throw new Error('Aucun identifiant d’équipement disponible pour la modification.');
       }
 
-      const equipmentCollection = getEquipmentCollection(selectedEq || form);
+      const equipmentCollection = EQUIPMENT_COLLECTION;
       const { id, __collection__, ...dataToUpdate } = form;
       const updatedEquipment = {
         ...dataToUpdate,
@@ -193,9 +193,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
   const handleDelete = async (id, name) => {
     if (window.confirm(`Supprimer "${name}" de l'inventaire ?`)) {
       try {
-        const equipment = equipments.find((eq) => eq.id === id);
-        const equipmentCollection = getEquipmentCollection(equipment);
-        await deleteDoc(doc(db, equipmentCollection, id));
+        await deleteDoc(doc(db, EQUIPMENT_COLLECTION, id));
         showNotif(`🗑️ Équipement "${name}" supprimé.`, 'warning');
         pushNotification({
           title: 'Équipement supprimé',
@@ -218,8 +216,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
     if (!eq) return;
     const newStatus = eq.status === 'maintenance' ? 'online' : 'maintenance';
     try {
-      const equipmentCollection = getEquipmentCollection(eq);
-      await updateDoc(doc(db, equipmentCollection, id), { status: newStatus });
+      await updateDoc(doc(db, EQUIPMENT_COLLECTION, id), { status: newStatus });
       showNotif(`🔧 "${name}" passé en mode ${newStatus === 'maintenance' ? 'Maintenance' : 'Online'}.`);
       pushNotification({
         title: 'Changement de statut',
