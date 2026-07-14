@@ -4,6 +4,7 @@ import Modal from '../components/ui/Modal';
 import { useAuth } from '../contexts/AuthContext';
 import { collection, addDoc, updateDoc, doc, deleteDoc, serverTimestamp, deleteField } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { sendAlertEmail } from '../services/emailService';
 import { useNotifications } from '../contexts/NotificationContext';
 import {
   Plus, Edit2, Eye, Trash2, PauseCircle,
@@ -93,6 +94,20 @@ const createAlertIfNeeded = async (equipmentData, notify = null) => {
       message: description,
       type: severity === 'CRITICAL' ? 'error' : 'warning'
     });
+  }
+
+  // Send email notification via EmailJS if enabled
+  try {
+    await sendAlertEmail({
+      severity,
+      equipName:   equipmentData.name,
+      equipIp:     equipmentData.ip,
+      equipType:   equipmentData.type,
+      description,
+      subject:     `[NetServMonitor] Alerte ${severity}: ${equipmentData.name}`
+    });
+  } catch (err) {
+    console.warn('EmailJS alert notification failed:', err);
   }
 
   return true;

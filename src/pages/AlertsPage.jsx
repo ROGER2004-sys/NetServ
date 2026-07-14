@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import AppLayout from '../components/layout/AppLayout';
 import { useAuth } from '../contexts/AuthContext';
 
-import { updateDoc, deleteDoc, doc, onSnapshot, collection } from 'firebase/firestore';
+
+import { updateDoc, deleteDoc, doc, onSnapshot, collection, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useNotifications } from '../contexts/NotificationContext';
 import {
-  SlidersHorizontal, Bell, Mail, MessageSquare, Bot,
+  SlidersHorizontal, Bell, Mail,
   CheckCircle, Circle, Download, LayoutGrid, Info,
   ExternalLink, ChevronLeft, ChevronRight
 } from 'lucide-react';
@@ -33,6 +34,57 @@ const AlertsPage = ({ equipments }) => {
   const [selectedEqId, setSelectedEqId] = useState('');
   const [thresholds, setThresholds] = useState({ cpu: 90, latency: 150, disk: 420 });
   const [commitSuccess, setCommitSuccess] = useState(false);
+  const [filterSeverity, setFilterSeverity] = useState('ALL');
+  const [showFilters, setShowFilters] = useState(false);
+  const [emailEnabled, setEmailEnabled] = useState(false);
+
+  useEffect(() => {
+    setAlertsPage(1);
+  }, [filterSeverity]);
+
+  // Listen to global email notification settings in Firestore
+  useEffect(() => {
+    // Check localStorage first for immediate local fallback
+    const localVal = localStorage.getItem('emailNotificationsEnabled') === 'true';
+    setEmailEnabled(localVal);
+
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'notifications'), (docSnap) => {
+      if (docSnap.exists()) {
+        const val = Boolean(docSnap.data().emailEnabled);
+        setEmailEnabled(val);
+        localStorage.setItem('emailNotificationsEnabled', String(val));
+      }
+    }, (err) => {
+      console.warn("Firestore settings listen failed, using localStorage fallback:", err);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleToggleEmail = async () => {
+    const nextVal = !emailEnabled;
+    setEmailEnabled(nextVal);
+    localStorage.setItem('emailNotificationsEnabled', String(nextVal));
+
+    try {
+      await setDoc(doc(db, 'settings', 'notifications'), {
+        emailEnabled: nextVal
+      }, { merge: true });
+      pushNotification({
+        title: 'Paramètre mis à jour',
+        message: `Notifications par e-mail ${nextVal ? 'activées' : 'désactivées'}.`,
+        type: 'info'
+      });
+    } catch (err) {
+      console.error('Error toggling email setting in Firestore:', err);
+      pushNotification({
+        title: 'Enregistré localement',
+        message: `Notifications par e-mail ${nextVal ? 'activées' : 'désactivées'} (Sauvegardé localement).`,
+        type: 'info'
+      });
+    }
+  };
+
+
 
   // Active critical count
   const criticalCount = alerts.filter(a => a.severity === 'CRITICAL' && !a.acquitted).length;
@@ -137,8 +189,13 @@ const AlertsPage = ({ equipments }) => {
     '--val': `${(value / max) * 100}%`
   });
 
-  const totalAlertsPages = Math.ceil(alerts.length / ALERTS_PER_PAGE);
-  const paginatedAlerts = alerts.slice(
+  const filteredAlerts = alerts.filter(alert => {
+    if (filterSeverity === 'ALL') return true;
+    return alert.severity === filterSeverity;
+  });
+
+  const totalAlertsPages = Math.ceil(filteredAlerts.length / ALERTS_PER_PAGE);
+  const paginatedAlerts = filteredAlerts.slice(
     (alertsPage - 1) * ALERTS_PER_PAGE,
     alertsPage * ALERTS_PER_PAGE
   );
@@ -162,11 +219,77 @@ const AlertsPage = ({ equipments }) => {
               {criticalCount} ACTIVE CRITICAL
             </div>
           )}
-          <button className="btn-secondary" id="configure-filters-btn" style={{ fontSize: 12, padding: '6px 14px' }}>
-            ≡ Configure Filters
+          <button
+            className="btn-secondary"
+            id="configure-filters-btn"
+            style={{
+              fontSize: 12,
+              padding: '6px 14px',
+              borderColor: showFilters ? '#1e3a6e' : '#e2e8f0',
+              background: showFilters ? '#eff6ff' : 'white',
+              color: showFilters ? '#1e3a6e' : '#475569',
+            }}
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            ≡ Configure Filters {filterSeverity !== 'ALL' && `(${filterSeverity})`}
           </button>
         </div>
       </div>
+
+      {showFilters && (
+        <div style={{
+          background: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderRadius: 12,
+          padding: '16px 20px',
+          marginBottom: 18,
+          display: 'flex',
+          gap: 16,
+          alignItems: 'center',
+          animation: 'slideDown 0.2s ease-out',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.03)'
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <SlidersHorizontal size={14} />
+            Severity Filter:
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[
+              { label: 'All Severities', value: 'ALL', color: '#64748b' },
+              { label: 'CRITICAL', value: 'CRITICAL', color: '#ef4444' },
+              { label: 'WARNING', value: 'WARNING', color: '#f97316' },
+              { label: 'INFO', value: 'INFO', color: '#3b82f6' }
+            ].map(opt => (
+              <button
+                key={opt.value}
+                id={`filter-sev-${opt.value.toLowerCase()}-btn`}
+                onClick={() => setFilterSeverity(opt.value)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 20,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  border: `1.5px solid ${filterSeverity === opt.value ? opt.color : '#e2e8f0'}`,
+                  background: filterSeverity === opt.value ? `${opt.color}15` : 'white',
+                  color: filterSeverity === opt.value ? opt.color : '#64748b',
+                  transition: 'all 0.2s ease',
+                  outline: 'none'
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
 
       <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 18 }}>
         {/* LEFT PANEL */}
@@ -307,43 +430,48 @@ const AlertsPage = ({ equipments }) => {
               <h3 style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>Notification Channels</h3>
             </div>
 
-            {[
-              {
-                icon: Mail, name: 'Email Relay',
-                sub: 'Active: tech@onda.ma',
-                active: true, id: 'channel-email'
-              },
-              {
-                icon: MessageSquare, name: 'SMS Gateway',
-                sub: 'Active: +1 (555) NOC-SERV',
-                active: true, id: 'channel-sms'
-              },
-              {
-                icon: Bot, name: 'Slack Webhook',
-                sub: 'Disconnected',
-                active: false, id: 'channel-slack'
-              }
-            ].map(({ icon: Icon, name, sub, active, id }) => (
-              <div key={id} className="notif-channel" id={id}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              className="notif-channel"
+              id="channel-email"
+              style={{
+                borderColor: emailEnabled ? '#22c55e' : '#e2e8f0',
+                background: emailEnabled ? '#f0fdf4' : '#f8fafc',
+                userSelect: 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                padding: '12px 14px',
+                borderRadius: 8,
+                border: '1px solid #e2e8f0',
+                marginBottom: 8
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={handleToggleEmail}>
                   <div style={{
                     width: 34, height: 34, borderRadius: 8,
-                    background: '#f1f5f9',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    background: emailEnabled ? '#dcfce7' : '#f1f5f9',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'background-color 0.2s'
                   }}>
-                    <Icon size={16} color="#64748b" />
+                    <Mail size={16} color={emailEnabled ? '#22c55e' : '#64748b'} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{name}</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{sub}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Email Relay</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8' }}>Active: mehdiezzahraoui35@gmail.com</div>
                   </div>
                 </div>
-                {active
-                  ? <CheckCircle size={18} color="#22c55e" />
-                  : <Circle size={18} color="#cbd5e1" />
-                }
+                <div style={{ cursor: 'pointer' }} onClick={handleToggleEmail}>
+                  {emailEnabled ? (
+                    <CheckCircle size={18} color="#22c55e" style={{ transition: 'all 0.2s' }} />
+                  ) : (
+                    <Circle size={18} color="#cbd5e1" style={{ transition: 'all 0.2s' }} />
+                  )}
+                </div>
               </div>
-            ))}
+
+
+            </div>
           </div>
         </div>
 
@@ -441,7 +569,7 @@ const AlertsPage = ({ equipments }) => {
           }}>
             <span>EVENTS PROCESSED: 142,901 &nbsp;&nbsp; MTTR: 12.4n</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>PAGE {alertsPage} OF {totalAlertsPages * 80}</span>
+              <span>PAGE {alertsPage} OF {Math.max(1, totalAlertsPages)}</span>
               <button
                 className="icon-btn"
                 style={{ width: 26, height: 26 }}

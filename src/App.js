@@ -59,12 +59,13 @@ const AppInner = () => {
     return () => unsubscribe();
   }, [currentUser]);
 
-  // Incremente uptime chaque seconde uniquement pour les equipements ONLINE
+  // Incremente uptime chaque seconde pour les equipements ONLINE et WARNING
   useEffect(() => {
     if (!currentUser) return;
     const timer = setInterval(() => {
       equipmentsRef.current.forEach(eq => {
-        if (eq.status === 'online') {
+        const status = eq.status ? eq.status.toLowerCase() : '';
+        if (status === 'online' || status === 'warning') {
           updateDoc(doc(db, 'equipements', eq.id), {
             uptime: increment(1)
           }).catch(err => console.error('Uptime increment error:', err));
