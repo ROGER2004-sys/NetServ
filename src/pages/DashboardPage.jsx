@@ -15,6 +15,15 @@ import {
 // Export context so other pages can share equipment state
 export const EquipmentsContext = createContext(null);
 
+const formatUptime = (seconds) => {
+  if (!seconds || isNaN(seconds)) return '0d 0h 0m 0s';
+  const days = Math.floor(seconds / (3600 * 24));
+  const hours = Math.floor((seconds % (3600 * 24)) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${days}d ${hours}h ${mins}m ${secs}s`;
+};
+
 // Generate latency data points
 const generateLatencyData = () => {
   const now = new Date();
@@ -265,10 +274,10 @@ const DashboardPage = ({ equipments, setEquipments }) => {
               <BarChart data={cpuData} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <YAxis domain={[0, 100]} tick={false} axisLine={false} />
-                <Tooltip 
-                  contentStyle={{ fontSize: 11, borderRadius: 8 }} 
-                  formatter={(v) => [`${v}%`, 'CPU']} 
-                  labelFormatter={(label, payload) => payload?.[0]?.payload?.fullName || label} 
+                <Tooltip
+                  contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                  formatter={(v) => [`${v}%`, 'CPU']}
+                  labelFormatter={(label, payload) => payload?.[0]?.payload?.fullName || label}
                 />
                 <Bar dataKey="value" radius={[3, 3, 0, 0]}>
                   {cpuData.map((entry, i) => {
@@ -387,7 +396,7 @@ const DashboardPage = ({ equipments, setEquipments }) => {
                       }} />
                     </div>
                   </td>
-                  <td style={{ fontSize: 12 }}>{eq.uptime}</td>
+                  <td style={{ fontSize: 12, fontWeight: 500 }}>{formatUptime(eq.uptime)}</td>
                   <td>
                     <span className={`status-badge ${getStatusClass(eq.status)}`}>
                       {eq.status === 'online' && '●'} {eq.status.toUpperCase()}

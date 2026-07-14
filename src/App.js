@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import React, { useState, useEffect, useRef } from 'react';
+import { collection, onSnapshot, updateDoc, doc, increment } from 'firebase/firestore';
 import { db } from './firebase/config';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -41,20 +41,38 @@ const ProtectedRoute = ({ children }) => {
 
 // App inner with shared equipments state
 const AppInner = () => {
+  const { currentUser } = useAuth();
   const [equipments, setEquipments] = useState([]);
+  const equipmentsRef = useRef([]);
 
+  // Ecoute Firestore uniquement apres connexion
   useEffect(() => {
+    if (!currentUser) return;
     const unsubscribe = onSnapshot(collection(db, 'equipements'), (snap) => {
       const incoming = [];
-      snap.forEach((doc) => {
-        incoming.push({ id: doc.id, ...doc.data(), __collection__: 'equipements' });
+      snap.forEach((d) => {
+        incoming.push({ id: d.id, ...d.data(), __collection__: 'equipements' });
       });
-
       setEquipments(incoming);
+      equipmentsRef.current = incoming;
     });
-
     return () => unsubscribe();
-  }, []);
+  }, [currentUser]);
+
+  // Incremente uptime chaque seconde uniquement pour les equipements ONLINE
+  useEffect(() => {
+    if (!currentUser) return;
+    const timer = setInterval(() => {
+      equipmentsRef.current.forEach(eq => {
+        if (eq.status === 'online') {
+          updateDoc(doc(db, 'equipements', eq.id), {
+            uptime: increment(1)
+          }).catch(err => console.error('Uptime increment error:', err));
+        }
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [currentUser]);
 
   return (
     <Routes>

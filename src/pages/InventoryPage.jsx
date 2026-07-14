@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AppLayout from '../components/layout/AppLayout';
 import Modal from '../components/ui/Modal';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, deleteDoc, serverTimestamp, deleteField } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useNotifications } from '../contexts/NotificationContext';
 import {
   Plus, Edit2, Eye, Trash2, PauseCircle,
-  Filter, Download, Server, CheckCircle, AlertTriangle, XCircle,
+  Download, Server, CheckCircle, AlertTriangle, XCircle,
   ChevronFirst, ChevronLast, ChevronLeft, ChevronRight, Shield
 } from 'lucide-react';
 
@@ -29,9 +29,18 @@ const getStatusDot = (status) => {
   return '#64748b';
 };
 
+const formatUptime = (seconds) => {
+  if (!seconds || isNaN(seconds)) return '0d 0h 0m 0s';
+  const days = Math.floor(seconds / (3600 * 24));
+  const hours = Math.floor((seconds % (3600 * 24)) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${days}d ${hours}h ${mins}m ${secs}s`;
+};
+
 const EMPTY_FORM = {
   name: '', ip: '', type: '', status: 'online',
-  cpu_usage: '', ram_usage: '', uptime: '0d 0h 0m'
+  cpu_usage: '', ram_usage: ''
 };
 
 const EQUIPMENT_COLLECTION = 'equipements';
@@ -102,6 +111,19 @@ const InventoryPage = ({ equipments, setEquipments }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [notification, setNotification] = useState(null);
 
+  // Nettoyage : supprime le champ legacy uptime_minutes de tous les documents
+  useEffect(() => {
+    if (!isAdmin || equipments.length === 0) return;
+    equipments.forEach(eq => {
+      if (eq.uptime_minutes !== undefined) {
+        updateDoc(doc(db, EQUIPMENT_COLLECTION, eq.id), {
+          uptime_minutes: deleteField()
+        }).catch(err => console.error("Cleanup uptime_minutes error:", err));
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, equipments.length]);
+
   const showNotif = (msg, type = 'success') => {
     setNotification({ msg, type });
     setTimeout(() => setNotification(null), 3000);
@@ -133,7 +155,8 @@ const InventoryPage = ({ equipments, setEquipments }) => {
         cpu_threshold: 90,
         ram_threshold: 90,
         latency_threshold: 150,
-        disk_threshold: 420
+        disk_threshold: 420,
+        uptime: 0
       };
       const createdDoc = await addDoc(collection(db, EQUIPMENT_COLLECTION), newEq);
       await createAlertIfNeeded({ ...newEq, id: createdDoc.id, __collection__: EQUIPMENT_COLLECTION }, pushNotification);
@@ -166,6 +189,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
 
       const equipmentCollection = EQUIPMENT_COLLECTION;
       const { id, __collection__, ...dataToUpdate } = form;
+
       const updatedEquipment = {
         ...dataToUpdate,
         cpu_usage: Number(dataToUpdate.cpu_usage) || 0,
@@ -236,6 +260,34 @@ const InventoryPage = ({ equipments, setEquipments }) => {
     } else {
       setForm(prev => ({ ...prev, [name]: value }));
     }
+  };
+
+  const handleExport = () => {
+    const headers = ['Nom', 'Adresse IP', 'Type', 'Statut', 'CPU Usage (%)', 'RAM Usage (%)', 'Uptime', 'Dernière sync'];
+    const csvContent = [
+      headers.join(','),
+      ...filtered.map(eq => [
+        `"${eq.name || ''}"`,
+        `"${eq.ip || ''}"`,
+        `"${eq.type || ''}"`,
+        `"${eq.status || ''}"`,
+        `"${eq.cpu_usage || 0}"`,
+        `"${eq.ram_usage || 0}"`,
+        `"${formatUptime(eq.uptime)}"`,
+        `"${eq.lastSync || ''}"`
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `equipements_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showNotif('✅ Export réussi.');
   };
 
   if (!isAdmin) {
@@ -321,10 +373,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button className="btn-secondary" id="filter-btn" style={{ fontSize: 12, padding: '7px 14px' }}>
-            <Filter size={13} /> Filter
-          </button>
-          <button className="btn-secondary" id="export-btn" style={{ fontSize: 12, padding: '7px 14px' }}>
+          <button className="btn-secondary" id="export-btn" style={{ fontSize: 12, padding: '7px 14px' }} onClick={handleExport}>
             <Download size={13} /> Export
           </button>
           <input
@@ -360,6 +409,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
               <th>NAME</th>
               <th>IP ADDRESS</th>
               <th>TYPE</th>
+              <th>UPTIME</th>
               <th>LAST SYNC</th>
               <th>ACTIONS</th>
             </tr>
@@ -379,6 +429,9 @@ const InventoryPage = ({ equipments, setEquipments }) => {
                 <td style={{ fontWeight: 600, color: '#1e293b' }}>{eq.name}</td>
                 <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{eq.ip}</td>
                 <td>{eq.type}</td>
+                <td style={{ fontSize: 12, fontWeight: 500 }}>
+                  {formatUptime(eq.uptime)}
+                </td>
                 <td style={{ color: eq.lastSync === '2 hours ago' ? '#ef4444' : '#64748b', fontWeight: eq.lastSync === '2 hours ago' ? 600 : 400 }}>
                   {formatDisplayValue(eq.lastSync)}
                 </td>
@@ -488,7 +541,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
               ['Statut', selectedEq.status.toUpperCase()],
               ['CPU Usage', `${selectedEq.cpu_usage}%`],
               ['RAM Usage', `${selectedEq.ram_usage}%`],
-              ['Uptime', selectedEq.uptime],
+              ['Uptime', formatUptime(selectedEq.uptime)],
               ['Dernière sync', selectedEq.lastSync]
             ].map(([k, v]) => (
               <div key={k} style={{ background: '#f8fafc', borderRadius: 8, padding: '10px 14px' }}>
@@ -539,10 +592,6 @@ const EquipmentForm = ({ onSubmit, submitLabel, form, onChange, onCancel }) => (
       <div className="form-group">
         <label className="form-label">RAM Usage (%)</label>
         <input className="form-input" type="text" inputMode="numeric" pattern="[0-9]*" name="ram_usage" value={form.ram_usage} onChange={onChange} />
-      </div>
-      <div className="form-group" style={{ gridColumn: '1/-1' }}>
-        <label className="form-label">Uptime</label>
-        <input className="form-input" name="uptime" value={form.uptime} onChange={onChange} placeholder="12d 4h 22m" />
       </div>
     </div>
     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
