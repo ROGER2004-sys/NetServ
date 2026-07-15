@@ -347,7 +347,7 @@ const LoginPage = () => {
               <span>Politique de Confidentialité</span>  &nbsp;
               <span>V2.4.0</span>
             </div>
-            <div>© 2024 NetServMonitor. Tous droits réservés.</div>
+            <div>© 2026 NetServMonitor. Tous droits réservés.</div>
           </div>
         </div>
       </div>

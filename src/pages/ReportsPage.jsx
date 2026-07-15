@@ -1,21 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import AppLayout from '../components/layout/AppLayout';
-import { useAuth } from '../contexts/AuthContext';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend, Cell
+  ResponsiveContainer
 } from 'recharts';
 import { FileText, Download, Calendar, Cloud, CheckCircle } from 'lucide-react';
 import jsPDF from 'jspdf';
-
-const INCIDENT_DATA = [
-  { month: 'JAN', critique: 4, major: 6, minor: 8 },
-  { month: 'FEB', critique: 3, major: 8, minor: 12 },
-  { month: 'MAR', critique: 7, major: 12, minor: 18 },
-  { month: 'APR', critique: 2, major: 5, minor: 9 },
-  { month: 'MAY', critique: 5, major: 9, minor: 15 },
-  { month: 'JUN', critique: 3, major: 7, minor: 11 },
-];
+import { collection, doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 const SLAGauge = ({ value, target }) => {
   const radius = 54;
@@ -66,22 +58,113 @@ const REPORT_TYPES = [
 ];
 
 const ReportsPage = ({ equipments }) => {
-  const { isAdmin, userProfile } = useAuth();
   const [period, setPeriod] = useState('TRIMESTRE');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [exportFormat, setExportFormat] = useState('PDF');
   const [reportType, setReportType] = useState(REPORT_TYPES[0]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  
+  const [alerts, setAlerts] = useState([]);
+  const [slaTarget, setSlaTarget] = useState(99.95);
+
+  // Load Alerts
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'alerts'), (snapshot) => {
+      const fetchedAlerts = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        let ts = data.timestamp;
+        let dateObj = null;
+        if (ts?.toDate) {
+            dateObj = ts.toDate();
+        } else if (typeof ts === 'number') {
+            dateObj = new Date(ts);
+        } else if (typeof ts === 'string') {
+            const parsed = Number(String(ts).replace(/[^0-9]/g, ''));
+            if (!Number.isNaN(parsed)) dateObj = new Date(parsed);
+        }
+        
+        return {
+          id: docSnap.id,
+          severity: data.severity || 'INFO',
+          date: dateObj || new Date(),
+          resource: data.resource || 'Unknown',
+          title: data.title || 'No title',
+          description: data.description || '',
+          acquitted: Boolean(data.acquitted)
+        };
+      });
+      setAlerts(fetchedAlerts);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Load SLA Target
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'sla'), (docSnap) => {
+      if (docSnap.exists() && docSnap.data().target !== undefined) {
+        setSlaTarget(Number(docSnap.data().target));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Filter alerts based on selected period
+  const filteredAlerts = useMemo(() => {
+    const now = new Date();
+    let startDate = new Date(0);
+    let endDate = new Date();
+
+    if (period === '7J') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (period === '30J') {
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else if (period === 'TRIMESTRE') {
+      startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    } else if (period === 'CUSTOM') {
+      if (customStartDate) startDate = new Date(customStartDate);
+      if (customEndDate) {
+        endDate = new Date(customEndDate);
+        endDate.setHours(23, 59, 59, 999);
+      }
+    }
+
+    return alerts.filter(a => a.date >= startDate && a.date <= endDate);
+  }, [alerts, period, customStartDate, customEndDate]);
+
+  // Generate Incident Data dynamically
+  const incidentData = useMemo(() => {
+    const monthsData = {};
+    
+    // Initialiser les mois présents dans la période
+    filteredAlerts.forEach(alert => {
+        const monthKey = alert.date.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+        if (!monthsData[monthKey]) {
+            monthsData[monthKey] = { month: monthKey, critique: 0, major: 0, minor: 0, order: alert.date.getTime() };
+        }
+        if (alert.severity === 'CRITICAL') monthsData[monthKey].critique++;
+        else if (alert.severity === 'WARNING') monthsData[monthKey].major++;
+        else monthsData[monthKey].minor++; // INFO and others
+    });
+
+    return Object.values(monthsData).sort((a, b) => a.order - b.order).map(item => ({
+        month: item.month,
+        critique: item.critique,
+        major: item.major,
+        minor: item.minor
+    }));
+  }, [filteredAlerts]);
 
   // Compute dynamic SLA from equipment states
   const slaValue = useMemo(() => {
     const total = equipments.length;
+    if (total === 0) return 100;
     const online = equipments.filter(e => e.status === 'online' || e.status === 'warning').length;
     const raw = (online / total) * 100;
-    // Clamp between 97 and 100 and round to 1 decimal
-    return Math.round(Math.min(100, Math.max(97, raw)) * 10) / 10;
+    return Math.round(raw * 100) / 100; // Round to 2 decimal places, no clamping
   }, [equipments]);
 
-  const slaTarget = 99.95;
   const isSLABreach = slaValue < slaTarget;
 
   const handleExportPDF = async () => {
@@ -128,7 +211,7 @@ const ReportsPage = ({ equipments }) => {
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(71, 85, 105);
-      const summary = `Le trimestre actuel a montré une stabilité exceptionnelle de l'infrastructure Enterprise Node. Avec un taux de disponibilité de ${slaValue}% (objectif: ${slaTarget}%), ${isSLABreach ? 'une rupture de SLA a été détectée.' : "l'objectif SLA est atteint."} ${equipments.filter(e => e.status === 'online').length} équipements sur ${equipments.length} sont opérationnels.`;
+      const summary = `La période sélectionnée a montré un taux de disponibilité de ${slaValue}% (objectif: ${slaTarget}%), ${isSLABreach ? 'une rupture de SLA a été détectée.' : "l'objectif SLA est atteint."} ${equipments.filter(e => e.status === 'online').length} équipements sur ${equipments.length} sont opérationnels. Au cours de cette période, ${filteredAlerts.length} incidents ont été enregistrés.`;
       const lines = doc.splitTextToSize(summary, 180);
       doc.text(lines, 23, 66);
 
@@ -146,9 +229,9 @@ const ReportsPage = ({ equipments }) => {
       const kpis = [
         ['Disponibilité SLA', `${slaValue}%`, isSLABreach ? 'BREACH' : 'OK'],
         ['Nœuds Actifs', equipments.filter(e => e.status === 'online').length.toString(), '—'],
-        ['Nœuds Hors Ligne', equipments.filter(e => e.status === 'offline').length.toString(), '—'],
+        ['Total Incidents', filteredAlerts.length.toString(), '—'],
         ['Type de Rapport', reportType, '—'],
-        ['Période', period, '—'],
+        ['Période', period === 'CUSTOM' ? `${customStartDate} à ${customEndDate}` : period, '—'],
       ];
 
       doc.setFontSize(9);
@@ -189,7 +272,7 @@ const ReportsPage = ({ equipments }) => {
         startX += colWidths[i];
       });
 
-      INCIDENT_DATA.forEach((row, rowIdx) => {
+      incidentData.forEach((row, rowIdx) => {
         const y = 168 + rowIdx * 8;
         startX = 15;
         [row.month, row.critique, row.major, row.minor, row.critique + row.major + row.minor].forEach((cell, i) => {
@@ -200,6 +283,10 @@ const ReportsPage = ({ equipments }) => {
           startX += colWidths[i];
         });
       });
+      
+      if (incidentData.length === 0) {
+          doc.text("Aucun incident sur cette période.", 18, 173);
+      }
 
       // Footer
       doc.setFillColor(10, 22, 40);
@@ -214,6 +301,43 @@ const ReportsPage = ({ equipments }) => {
       setTimeout(() => setExportSuccess(false), 3000);
     } catch (err) {
       console.error('PDF generation error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleExportCSV = async () => {
+    setIsGenerating(true);
+    await new Promise(r => setTimeout(r, 800)); // Simulate generation
+
+    try {
+      const headers = ['Mois', 'Critique', 'Major', 'Mineur', 'Total'];
+      const rows = incidentData.map(row => [
+        row.month,
+        row.critique,
+        row.major,
+        row.minor,
+        row.critique + row.major + row.minor
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(r => r.join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `NetServMonitor_Incidents_${period}_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 3000);
+    } catch (err) {
+      console.error('CSV generation error:', err);
     } finally {
       setIsGenerating(false);
     }
@@ -237,43 +361,63 @@ const ReportsPage = ({ equipments }) => {
         </div>
 
         {/* Period selector */}
-        <div style={{ display: 'flex', gap: 8 }}>
-          {[
-            { label: '7\nJours', value: '7J' },
-            { label: '30\nJours', value: '30J' },
-            { label: 'Dernier\nTrimestre', value: 'TRIMESTRE' },
-          ].map(({ label, value }) => (
-            <button
-              key={value}
-              id={`period-${value}-btn`}
-              onClick={() => setPeriod(value)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 8,
-                border: '1px solid #e2e8f0',
-                background: period === value ? '#1e3a6e' : 'white',
-                color: period === value ? 'white' : '#475569',
-                fontSize: 12, fontWeight: 500, cursor: 'pointer',
-                whiteSpace: 'pre-line', textAlign: 'center', lineHeight: 1.2
-              }}
-            >
-              {label}
-            </button>
-          ))}
-          <button
-            id="period-custom-btn"
-            onClick={() => setPeriod('CUSTOM')}
-            style={{
-              padding: '6px 14px', borderRadius: 8,
-              border: '1px solid #e2e8f0',
-              background: period === 'CUSTOM' ? '#1e3a6e' : 'white',
-              color: period === 'CUSTOM' ? 'white' : '#475569',
-              fontSize: 12, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 6
-            }}
-          >
-            <Calendar size={13} /> Personnalisé
-          </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              {[
+                { label: '7\nJours', value: '7J' },
+                { label: '30\nJours', value: '30J' },
+                { label: 'Dernier\nTrimestre', value: 'TRIMESTRE' },
+              ].map(({ label, value }) => (
+                <button
+                  key={value}
+                  id={`period-${value}-btn`}
+                  onClick={() => setPeriod(value)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: 8,
+                    border: '1px solid #e2e8f0',
+                    background: period === value ? '#1e3a6e' : 'white',
+                    color: period === value ? 'white' : '#475569',
+                    fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                    whiteSpace: 'pre-line', textAlign: 'center', lineHeight: 1.2
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+              <button
+                id="period-custom-btn"
+                onClick={() => setPeriod('CUSTOM')}
+                style={{
+                  padding: '6px 14px', borderRadius: 8,
+                  border: '1px solid #e2e8f0',
+                  background: period === 'CUSTOM' ? '#1e3a6e' : 'white',
+                  color: period === 'CUSTOM' ? 'white' : '#475569',
+                  fontSize: 12, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 6
+                }}
+              >
+                <Calendar size={13} /> Personnalisé
+              </button>
+            </div>
+            
+            {period === 'CUSTOM' && (
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', animation: 'fadeIn 0.2s' }}>
+                    <input 
+                        type="date" 
+                        value={customStartDate} 
+                        onChange={(e) => setCustomStartDate(e.target.value)}
+                        style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 12 }}
+                    />
+                    <span style={{ fontSize: 12, color: '#64748b', alignSelf: 'center' }}>à</span>
+                    <input 
+                        type="date" 
+                        value={customEndDate} 
+                        onChange={(e) => setCustomEndDate(e.target.value)}
+                        style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 12 }}
+                    />
+                </div>
+            )}
         </div>
       </div>
 
@@ -318,7 +462,7 @@ const ReportsPage = ({ equipments }) => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>Répartition des Incidents</h3>
-              <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Analyse comparative par sévérité du trimestre actuel.</p>
+              <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>Analyse comparative par sévérité ({period}).</p>
             </div>
             <div style={{ display: 'flex', gap: 14, fontSize: 11 }}>
               {[
@@ -334,15 +478,21 @@ const ReportsPage = ({ equipments }) => {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={INCIDENT_DATA} margin={{ top: 5, right: 0, bottom: 0, left: -20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
-              <Bar dataKey="critique" fill="#ef4444" radius={[3, 3, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="major" fill="#f97316" radius={[3, 3, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="minor" fill="#93c5fd" radius={[3, 3, 0, 0]} maxBarSize={28} />
-            </BarChart>
+            {incidentData.length > 0 ? (
+                <BarChart data={incidentData} margin={{ top: 5, right: 0, bottom: 0, left: -20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                  <Bar dataKey="critique" fill="#ef4444" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                  <Bar dataKey="major" fill="#f97316" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                  <Bar dataKey="minor" fill="#93c5fd" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                </BarChart>
+            ) : (
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13 }}>
+                    Aucun incident détecté sur cette période
+                </div>
+            )}
           </ResponsiveContainer>
         </div>
       </div>
@@ -370,25 +520,29 @@ const ReportsPage = ({ equipments }) => {
             <label className="form-label">FORMAT DE SORTIE</label>
             <div style={{ display: 'flex', gap: 10 }}>
               {/* PDF */}
-              <div style={{
-                flex: 1, border: '2px solid #1e3a6e', borderRadius: 10,
-                padding: '14px 10px', textAlign: 'center', cursor: 'pointer',
-                background: '#eff6ff'
+              <div 
+                onClick={() => setExportFormat('PDF')}
+                style={{
+                  flex: 1, border: exportFormat === 'PDF' ? '2px solid #1e3a6e' : '1.5px solid #e2e8f0', 
+                  borderRadius: 10, padding: '14px 10px', textAlign: 'center', cursor: 'pointer',
+                  background: exportFormat === 'PDF' ? '#eff6ff' : 'white'
               }}>
-                <FileText size={22} color="#1e3a6e" style={{ marginBottom: 4 }} />
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#1e3a6e' }}>PDF Pro</div>
+                <FileText size={22} color={exportFormat === 'PDF' ? '#1e3a6e' : '#64748b'} style={{ marginBottom: 4 }} />
+                <div style={{ fontSize: 12, fontWeight: 700, color: exportFormat === 'PDF' ? '#1e3a6e' : '#64748b' }}>PDF Pro</div>
               </div>
-              {/* Excel */}
-              <div style={{
-                flex: 1, border: '1.5px solid #e2e8f0', borderRadius: 10,
-                padding: '14px 10px', textAlign: 'center', cursor: 'pointer',
-                background: 'white', color: '#64748b'
+              {/* Excel / CSV */}
+              <div 
+                onClick={() => setExportFormat('CSV')}
+                style={{
+                  flex: 1, border: exportFormat === 'CSV' ? '2px solid #1e3a6e' : '1.5px solid #e2e8f0', 
+                  borderRadius: 10, padding: '14px 10px', textAlign: 'center', cursor: 'pointer',
+                  background: exportFormat === 'CSV' ? '#eff6ff' : 'white', color: exportFormat === 'CSV' ? '#1e3a6e' : '#64748b'
               }}>
                 <div style={{
                   width: 22, height: 22, margin: '0 auto 4px',
-                  background: '#f1f5f9', borderRadius: 4,
+                  background: exportFormat === 'CSV' ? '#dbeafe' : '#f1f5f9', borderRadius: 4,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, fontWeight: 700, color: '#475569'
+                  fontSize: 10, fontWeight: 700, color: exportFormat === 'CSV' ? '#1e3a6e' : '#475569'
                 }}>XLS</div>
                 <div style={{ fontSize: 12, fontWeight: 600 }}>Excel /<br />CSV</div>
               </div>
@@ -397,7 +551,7 @@ const ReportsPage = ({ equipments }) => {
 
           <button
             id="export-pdf-btn"
-            onClick={handleExportPDF}
+            onClick={exportFormat === 'PDF' ? handleExportPDF : handleExportCSV}
             disabled={isGenerating}
             style={{
               width: '100%', padding: '11px',
@@ -415,16 +569,17 @@ const ReportsPage = ({ equipments }) => {
                 Génération en cours...
               </>
             ) : exportSuccess ? (
-              '✅ PDF téléchargé !'
+              `✅ ${exportFormat} téléchargé !`
             ) : (
               <>
                 <Download size={15} />
-                Générer & Télécharger PDF
+                Générer & Télécharger {exportFormat}
               </>
             )}
           </button>
 
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }
+                   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
         </div>
 
         {/* Preview panel */}
@@ -461,11 +616,13 @@ const ReportsPage = ({ equipments }) => {
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 5 }}>1. Résumé Exécutif</div>
                 <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.6 }}>
-                  Le trimestre actuel a montré une stabilité exceptionnelle de l'infrastructure Enterprise Node.
-                  Avec un taux de disponibilité de <strong style={{ color: isSLABreach ? '#dc2626' : '#22c55e' }}>{slaValue}%</strong>.
-                  {isSLABreach && (
+                  La période sélectionnée a montré un taux de disponibilité de <strong style={{ color: isSLABreach ? '#dc2626' : '#22c55e' }}>{slaValue}%</strong>.
+                  {isSLABreach ? (
                     <span style={{ color: '#dc2626', fontWeight: 600 }}> ⚠ Rupture de SLA détectée.</span>
+                  ) : (
+                    <span> Objectif de {slaTarget}% atteint.</span>
                   )}
+                  <br/>Total incidents enregistrés: <strong>{filteredAlerts.length}</strong>.
                 </div>
               </div>
             </div>
@@ -475,8 +632,8 @@ const ReportsPage = ({ equipments }) => {
               {[
                 ['SLA Disponibilité', `${slaValue}%`, isSLABreach ? '#dc2626' : '#22c55e'],
                 ['Équipements Online', equipments.filter(e => e.status === 'online').length, '#1e3a6e'],
-                ['Total Inventaire', equipments.length, '#475569'],
-                ['Période', period, '#475569'],
+                ['Total Incidents', filteredAlerts.length, '#f97316'],
+                ['Période', period === 'CUSTOM' ? `${customStartDate || '...'} à ${customEndDate || '...'}` : period, '#475569'],
               ].map(([k, v, color]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f1f5f9' }}>
                   <span style={{ color: '#94a3b8' }}>{k}</span>
