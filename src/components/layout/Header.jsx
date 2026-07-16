@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Bell, Settings, HelpCircle, Search, X, Mail, UserCircle2, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
+import { db } from '../../firebase/config';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastructure, nodes, or IPs...' }) => {
   const { userProfile, currentUser, updateUserProfile } = useAuth();
@@ -9,6 +11,12 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
   const [searchVal, setSearchVal] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsAppName, setSettingsAppName] = useState(title);
+  const [settingsEmails, setSettingsEmails] = useState('');
+  const [pingEnabled, setPingEnabled] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
   const [displayNameValue, setDisplayNameValue] = useState('');
   const [emailValue, setEmailValue] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
@@ -19,6 +27,24 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
     setEmailValue(userProfile?.email || currentUser?.email || '');
   }, [userProfile, currentUser]);
 
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const docRef = doc(db, 'settings', 'global');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.appName) setSettingsAppName(data.appName);
+          if (data.techEmails) setSettingsEmails(data.techEmails);
+          if (data.emailNotificationsEnabled !== undefined) setPingEnabled(data.emailNotificationsEnabled);
+        }
+      } catch (err) {
+        console.error('Error fetching global settings:', err);
+      }
+    };
+    fetchSettings();
+  }, []);
+
   const displayName = userProfile?.displayName || currentUser?.email?.split('@')[0] || 'User';
   const role = userProfile?.isAdmin ? 'Root Privilege' : (userProfile?.role || 'Operator');
   const initials = displayName.slice(0, 2).toUpperCase();
@@ -27,7 +53,7 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
     <header className="app-header">
       {/* Title */}
       <div style={{ fontWeight: 800, fontSize: '16px', color: '#0f172a', whiteSpace: 'nowrap', marginRight: '16px' }}>
-        {title}
+        {settingsAppName}
       </div>
 
       {/* Search */}
@@ -114,9 +140,144 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
           </div>
         )}
 
-        <button className="icon-btn" id="settings-btn" aria-label="Settings" style={{ marginLeft: 10 }}>
+        <button 
+          className="icon-btn" 
+          id="settings-btn" 
+          aria-label="Settings" 
+          style={{ marginLeft: 10 }}
+          onClick={() => setShowSettings((open) => !open)}
+        >
           <Settings size={18} />
         </button>
+
+        {/* Settings pane */}
+        {showSettings && (
+          <div style={{
+            position: 'absolute', top: 52, right: 40,
+            width: 360,
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: 14,
+            boxShadow: '0 25px 70px rgba(15,23,42,0.12)',
+            zIndex: 5000,
+            padding: 20
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Paramètres</div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>Configuration de l'application</div>
+              </div>
+              <button
+                className="icon-btn"
+                style={{ padding: 4 }}
+                onClick={() => setShowSettings(false)}
+                aria-label="Close settings"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {settingsMessage && (
+              <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: '#ecfdf3', color: '#047857', fontSize: 12 }}>
+                {settingsMessage}
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gap: 12 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Nom de l'application</label>
+                <input
+                  type="text"
+                  value={settingsAppName}
+                  onChange={(e) => setSettingsAppName(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1' }}
+                  placeholder="Ex: NetServMonitor"
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Emails des techniciens (séparés par virgule)</label>
+                <textarea
+                  value={settingsEmails}
+                  onChange={(e) => setSettingsEmails(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', minHeight: '60px', resize: 'vertical' }}
+                  placeholder="tech1@example.com, tech2@example.com"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button
+                  disabled={savingSettings}
+                  onClick={async () => {
+                    setPingEnabled(true);
+                    try {
+                      await setDoc(doc(db, 'settings', 'global'), { emailNotificationsEnabled: true }, { merge: true });
+                    } catch (err) {
+                      console.error(err);
+                    }
+                  }}
+                  style={{ 
+                    flex: 1, padding: '8px', borderRadius: 8, 
+                    border: '1px solid #10b981', 
+                    background: pingEnabled ? '#10b981' : '#ecfdf5', 
+                    color: pingEnabled ? '#ffffff' : '#047857', 
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Activer ping
+                </button>
+                <button
+                  disabled={savingSettings}
+                  onClick={async () => {
+                    setPingEnabled(false);
+                    try {
+                      await setDoc(doc(db, 'settings', 'global'), { emailNotificationsEnabled: false }, { merge: true });
+                    } catch (err) {
+                      console.error(err);
+                    }
+                  }}
+                  style={{ 
+                    flex: 1, padding: '8px', borderRadius: 8, 
+                    border: '1px solid #ef4444', 
+                    background: !pingEnabled ? '#ef4444' : '#fef2f2', 
+                    color: !pingEnabled ? '#ffffff' : '#b91c1c', 
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Désactiver ping
+                </button>
+              </div>
+            </div>
+
+            <button
+              className="btn-primary"
+              disabled={savingSettings}
+              onClick={async () => {
+                setSavingSettings(true);
+                setSettingsMessage('');
+                try {
+                  await setDoc(doc(db, 'settings', 'global'), {
+                    appName: settingsAppName,
+                    techEmails: settingsEmails,
+                    emailNotificationsEnabled: pingEnabled
+                  }, { merge: true });
+                  setSettingsMessage('Paramètres enregistrés (Global).');
+                } catch (err) {
+                  console.error(err);
+                  setSettingsMessage('Erreur lors de l\'enregistrement.');
+                } finally {
+                  setSavingSettings(false);
+                  setTimeout(() => setSettingsMessage(''), 3000);
+                }
+              }}
+              style={{ width: '100%', padding: '12px 14px', borderRadius: 10, marginTop: 16 }}
+            >
+              Enregistrer
+            </button>
+          </div>
+        )}
         <button className="icon-btn" id="help-btn" aria-label="Help" style={{ marginLeft: 10 }}>
           <HelpCircle size={18} />
         </button>
