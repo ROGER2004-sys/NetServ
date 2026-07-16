@@ -38,7 +38,7 @@ const generateLatencyData = () => {
   });
 };
 
-const DashboardPage = ({ equipments, setEquipments }) => {
+const DashboardPage = ({ equipments, setEquipments, isGlobalMonitoringActive }) => {
   const [latencyData, setLatencyData] = useState(generateLatencyData());
   const [latencyPeriod, setLatencyPeriod] = useState('24H');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -108,7 +108,30 @@ const DashboardPage = ({ equipments, setEquipments }) => {
   };
 
   return (
-    <AppLayout title="NetServMonitor" searchPlaceholder="Search infrastructure, nodes, or IPs...">
+    <AppLayout title="NetServMonitor" searchPlaceholder="Search infrastructure, nodes, or IPs..." isGlobalMonitoringActive={isGlobalMonitoringActive}>
+      {/* Bandeau état de surveillance globale */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 16px', borderRadius: 10, marginBottom: 16,
+        background: isGlobalMonitoringActive
+          ? 'linear-gradient(135deg, rgba(34,197,94,0.08), rgba(16,185,129,0.05))'
+          : 'linear-gradient(135deg, rgba(239,68,68,0.08), rgba(220,38,38,0.05))',
+        border: `1px solid ${isGlobalMonitoringActive ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`,
+      }}>
+        <span style={{
+          width: 10, height: 10, borderRadius: '50%',
+          background: isGlobalMonitoringActive ? '#22c55e' : '#ef4444',
+          display: 'inline-block',
+          boxShadow: isGlobalMonitoringActive ? '0 0 8px rgba(34,197,94,0.5)' : '0 0 8px rgba(239,68,68,0.4)',
+          animation: isGlobalMonitoringActive ? 'pulse 2s infinite' : 'none'
+        }} />
+        <span style={{ fontSize: 13, fontWeight: 600, color: isGlobalMonitoringActive ? '#15803d' : '#b91c1c' }}>
+          {isGlobalMonitoringActive
+            ? '🟢 Surveillance automatique active — L\'agent pingue tous les équipements'
+            : '🔴 Surveillance arrêtée — Mode statique, les statuts ne sont pas mis à jour automatiquement'}
+        </span>
+      </div>
+
       {/* Breadcrumb */}
       <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 20, display: 'flex', gap: 6, alignItems: 'center' }}>
         <span>System</span>

@@ -48,7 +48,14 @@ const EQUIPMENT_COLLECTION = 'equipements';
 
 const formatDisplayValue = (value) => {
   if (value === null || value === undefined || value === '') return '—';
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') {
+    // Detect ISO date strings (e.g. from lastSync) and format them nicely
+    const isIsoDate = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value);
+    if (isIsoDate) {
+      return new Date(value).toLocaleString();
+    }
+    return value;
+  }
   if (typeof value === 'number') return value.toString();
   if (value instanceof Date) return value.toLocaleString();
   if (typeof value?.toDate === 'function') return value.toDate().toLocaleString();
@@ -113,7 +120,7 @@ const createAlertIfNeeded = async (equipmentData, notify = null) => {
   return true;
 };
 
-const InventoryPage = ({ equipments, setEquipments }) => {
+const InventoryPage = ({ equipments, setEquipments, isGlobalMonitoringActive }) => {
   const { isAdmin } = useAuth();
   const { pushNotification } = useNotifications();
   const [currentPage, setCurrentPage] = useState(1);
@@ -307,7 +314,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
 
   if (!isAdmin) {
     return (
-      <AppLayout title="Inventory" searchPlaceholder="Rechercher un actif ou une IP...">
+      <AppLayout title="Inventory" searchPlaceholder="Rechercher un actif ou une IP..." isGlobalMonitoringActive={isGlobalMonitoringActive}>
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           minHeight: '60vh', gap: 16
@@ -329,7 +336,7 @@ const InventoryPage = ({ equipments, setEquipments }) => {
   }
 
   return (
-    <AppLayout title="Inventory" searchPlaceholder="Rechercher un actif ou une IP...">
+    <AppLayout title="Inventory" searchPlaceholder="Rechercher un actif ou une IP..." isGlobalMonitoringActive={isGlobalMonitoringActive}>
       {notification && (
         <div style={{
           position: 'fixed', top: 20, right: 20, zIndex: 300,

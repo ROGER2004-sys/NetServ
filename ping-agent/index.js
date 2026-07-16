@@ -1,0 +1,150 @@
+/**
+ * NetServ Ping Agent — Surveillance Globale du Réseau
+ * 
+ * Cet agent écoute la configuration globale dans Firestore (settings/global).
+ * - Si isGlobalMonitoringActive === true  → Ping toutes les machines toutes les 30s
+ * - Si isGlobalMonitoringActive === false → Aucun ping, les statuts restent figés
+ */
+
+const ping = require('ping');
+const admin = require('firebase-admin');
+const path = require('path');
+
+// ─── Initialisation Firebase Admin ─────────────────────────────────────────
+const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
+
+try {
+  const serviceAccount = require(serviceAccountPath);
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  console.log('✅ Firebase Admin initialisé avec succès.');
+} catch (err) {
+  console.error('❌ Erreur : Impossible de charger serviceAccountKey.json');
+  console.error('   Téléchargez-le depuis : Console Firebase → Paramètres → Comptes de service');
+  console.error('   Placez-le dans : ping-agent/serviceAccountKey.json');
+  process.exit(1);
+}
+
+const db = admin.firestore();
+
+// ─── État Global ───────────────────────────────────────────────────────────
+let isMonitoringActive = false;
+let pingInterval = null;
+const PING_INTERVAL_MS = 30000; // 30 secondes
+
+// ─── Fonction de Ping de Toutes les Machines ──────────────────────────────
+async function checkAllMachines() {
+  if (!isMonitoringActive) {
+    return;
+  }
+
+  console.log(`\n🔍 [${new Date().toLocaleTimeString()}] Lancement du scan réseau...`);
+
+  try {
+    const snapshot = await db.collection('equipements').get();
+
+    if (snapshot.empty) {
+      console.log('   ℹ️  Aucun équipement trouvé dans la base.');
+      return;
+    }
+
+    const pingPromises = snapshot.docs.map(async (docSnap) => {
+      const machine = docSnap.data();
+      const ip = machine.ip;
+
+      if (!ip) {
+        console.log(`   ⚠️  ${docSnap.id} — Pas d'adresse IP, ignoré.`);
+        return;
+      }
+
+      try {
+        const res = await ping.promise.probe(ip, { timeout: 2 });
+        const nouveauStatut = res.alive ? 'online' : 'offline';
+
+        // Ne mettre à jour que si le statut a changé
+        // Et ne pas écraser le statut "maintenance" (géré manuellement par l'admin)
+        if (machine.status === 'maintenance') {
+          console.log(`   🔧 ${machine.name || ip} — En maintenance, statut préservé.`);
+          return;
+        }
+
+        if (machine.status !== nouveauStatut) {
+          await db.collection('equipements').doc(docSnap.id).update({
+            status: nouveauStatut,
+            lastSync: new Date().toISOString()
+          });
+          const icon = nouveauStatut === 'online' ? '🟢' : '🔴';
+          console.log(`   ${icon} ${machine.name || ip} (${ip}) — ${machine.status} → ${nouveauStatut}`);
+        } else {
+          console.log(`   ⚪ ${machine.name || ip} (${ip}) — Statut inchangé (${nouveauStatut})`);
+        }
+      } catch (pingErr) {
+        console.error(`   ❌ Erreur ping ${machine.name || ip} (${ip}):`, pingErr.message);
+      }
+    });
+
+    await Promise.all(pingPromises);
+    console.log(`✅ Scan terminé. Prochain scan dans ${PING_INTERVAL_MS / 1000}s.`);
+  } catch (err) {
+    console.error('❌ Erreur lors de la récupération des équipements:', err.message);
+  }
+}
+
+// ─── Démarrer / Arrêter le cycle de ping ──────────────────────────────────
+function startPingCycle() {
+  if (pingInterval) return; // Déjà en cours
+  console.log('▶️  Surveillance globale DÉMARRÉE — Ping toutes les 30s');
+  checkAllMachines(); // Premier scan immédiat
+  pingInterval = setInterval(checkAllMachines, PING_INTERVAL_MS);
+}
+
+function stopPingCycle() {
+  if (pingInterval) {
+    clearInterval(pingInterval);
+    pingInterval = null;
+  }
+  console.log('⏸️  Surveillance globale ARRÊTÉE — Les statuts restent figés');
+}
+
+// ─── Écoute en temps réel de la configuration globale ─────────────────────
+console.log('\n════════════════════════════════════════════════════');
+console.log('  NetServ Ping Agent — Surveillance Réseau v1.0');
+console.log('════════════════════════════════════════════════════\n');
+console.log('👂 Écoute de la configuration globale (settings/global)...\n');
+
+db.collection('settings').doc('global').onSnapshot((docSnap) => {
+  if (!docSnap.exists) {
+    console.log('⚠️  Document settings/global introuvable. Surveillance désactivée par défaut.');
+    isMonitoringActive = false;
+    stopPingCycle();
+    return;
+  }
+
+  const config = docSnap.data();
+  const newState = config.isGlobalMonitoringActive === true;
+
+  if (newState !== isMonitoringActive) {
+    isMonitoringActive = newState;
+    if (isMonitoringActive) {
+      startPingCycle();
+    } else {
+      stopPingCycle();
+    }
+  }
+}, (err) => {
+  console.error('❌ Erreur écoute Firestore:', err.message);
+});
+
+// ─── Gestion propre de l'arrêt ────────────────────────────────────────────
+process.on('SIGINT', () => {
+  console.log('\n🛑 Arrêt de l\'agent...');
+  stopPingCycle();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n🛑 Arrêt de l\'agent...');
+  stopPingCycle();
+  process.exit(0);
+});

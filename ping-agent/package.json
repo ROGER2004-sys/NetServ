@@ -1,0 +1,13 @@
+{
+  "name": "netserv-ping-agent",
+  "version": "1.0.0",
+  "description": "Agent de surveillance réseau - Ping global des équipements",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ping": "^0.4.4",
+    "firebase-admin": "^13.4.0"
+  }
+}

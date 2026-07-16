@@ -57,7 +57,7 @@ const REPORT_TYPES = [
   'Inventaire Réseau'
 ];
 
-const ReportsPage = ({ equipments }) => {
+const ReportsPage = ({ equipments, isGlobalMonitoringActive }) => {
   const [period, setPeriod] = useState('TRIMESTRE');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
@@ -344,7 +344,7 @@ const ReportsPage = ({ equipments }) => {
   };
 
   return (
-    <AppLayout title="NetServMonitor" searchPlaceholder="Rechercher des rapports ou logs...">
+    <AppLayout title="NetServMonitor" searchPlaceholder="Rechercher des rapports ou logs..." isGlobalMonitoringActive={isGlobalMonitoringActive}>
       {/* Breadcrumb */}
       <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 16, display: 'flex', gap: 6 }}>
         <span>Analytics</span><span>›</span><span style={{ color: '#475569', fontWeight: 500 }}>Reports Center</span>

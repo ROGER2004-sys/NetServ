@@ -25,7 +25,7 @@ const formatDisplayValue = (value) => {
   return String(value);
 };
 
-const AlertsPage = ({ equipments }) => {
+const AlertsPage = ({ equipments, isGlobalMonitoringActive }) => {
   const { isAdmin, userProfile } = useAuth();
   const canManageAlerts = isAdmin || String(userProfile?.role || '').toLowerCase().includes('technicien');
   const { pushNotification } = useNotifications();
@@ -61,6 +61,14 @@ const AlertsPage = ({ equipments }) => {
   }, []);
 
   const handleToggleEmail = async () => {
+    if (!canManageAlerts) {
+      pushNotification({
+        title: 'Accès refusé',
+        message: 'Vous n\'avez pas les droits pour modifier les canaux de notification.',
+        type: 'error'
+      });
+      return;
+    }
     const nextVal = !emailEnabled;
     setEmailEnabled(nextVal);
     localStorage.setItem('emailNotificationsEnabled', String(nextVal));
@@ -154,7 +162,7 @@ const AlertsPage = ({ equipments }) => {
     }
   };
 
-  // Load thresholds for selected equipment
+  // Load thresholds for selected equipment (only when selection changes to avoid resetting during edit)
   useEffect(() => {
     if (selectedEqId) {
       const eq = equipments.find(e => e.id === selectedEqId);
@@ -166,7 +174,8 @@ const AlertsPage = ({ equipments }) => {
         });
       }
     }
-  }, [selectedEqId, equipments]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEqId]);
 
   // Commit thresholds
   const handleCommit = async () => {
@@ -201,7 +210,7 @@ const AlertsPage = ({ equipments }) => {
   );
 
   return (
-    <AppLayout title="NetServMonitor" searchPlaceholder="Global search entities...">
+    <AppLayout title="NetServMonitor" searchPlaceholder="Global search entities..." isGlobalMonitoringActive={isGlobalMonitoringActive}>
       {/* Breadcrumb + critical badge */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -343,7 +352,7 @@ const AlertsPage = ({ equipments }) => {
                 className="range-slider"
                 style={sliderStyle(thresholds.cpu, 100)}
                 value={thresholds.cpu}
-                disabled={!selectedEqId || !isAdmin}
+                disabled={!selectedEqId || !canManageAlerts}
                 onChange={e => setThresholds(prev => ({ ...prev, cpu: Number(e.target.value) }))}
               />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8', marginTop: 4 }}>
@@ -369,7 +378,7 @@ const AlertsPage = ({ equipments }) => {
                 className="range-slider"
                 style={sliderStyle(thresholds.latency, 500)}
                 value={thresholds.latency}
-                disabled={!selectedEqId || !isAdmin}
+                disabled={!selectedEqId || !canManageAlerts}
                 onChange={e => setThresholds(prev => ({ ...prev, latency: Number(e.target.value) }))}
               />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8', marginTop: 4 }}>
@@ -395,13 +404,13 @@ const AlertsPage = ({ equipments }) => {
                 className="range-slider"
                 style={sliderStyle(thresholds.disk, 1000)}
                 value={thresholds.disk}
-                disabled={!selectedEqId || !isAdmin}
+                disabled={!selectedEqId || !canManageAlerts}
                 onChange={e => setThresholds(prev => ({ ...prev, disk: Number(e.target.value) }))}
               />
             </div>
 
             {/* Commit button */}
-            {isAdmin ? (
+            {canManageAlerts ? (
               <button
                 id="commit-thresholds-btn"
                 onClick={handleCommit}
@@ -446,8 +455,8 @@ const AlertsPage = ({ equipments }) => {
                 marginBottom: 8
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }} onClick={handleToggleEmail}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', opacity: canManageAlerts ? 1 : 0.6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: canManageAlerts ? 'pointer' : 'not-allowed' }} onClick={handleToggleEmail}>
                   <div style={{
                     width: 34, height: 34, borderRadius: 8,
                     background: emailEnabled ? '#dcfce7' : '#f1f5f9',
@@ -461,7 +470,7 @@ const AlertsPage = ({ equipments }) => {
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>Active: mehdiezzahraoui35@gmail.com</div>
                   </div>
                 </div>
-                <div style={{ cursor: 'pointer' }} onClick={handleToggleEmail}>
+                <div style={{ cursor: canManageAlerts ? 'pointer' : 'not-allowed' }} onClick={handleToggleEmail}>
                   {emailEnabled ? (
                     <CheckCircle size={18} color="#22c55e" style={{ transition: 'all 0.2s' }} />
                   ) : (

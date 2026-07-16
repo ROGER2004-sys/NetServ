@@ -44,6 +44,7 @@ const AppInner = () => {
   const { currentUser } = useAuth();
   const [equipments, setEquipments] = useState([]);
   const equipmentsRef = useRef([]);
+  const [isGlobalMonitoringActive, setIsGlobalMonitoringActive] = useState(false);
 
   // Ecoute Firestore uniquement apres connexion
   useEffect(() => {
@@ -55,6 +56,22 @@ const AppInner = () => {
       });
       setEquipments(incoming);
       equipmentsRef.current = incoming;
+    });
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // Ecoute en temps reel de la configuration globale (settings/global)
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'global'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setIsGlobalMonitoringActive(data.isGlobalMonitoringActive === true);
+      } else {
+        setIsGlobalMonitoringActive(false);
+      }
+    }, (err) => {
+      console.error('Error listening to global config:', err);
     });
     return () => unsubscribe();
   }, [currentUser]);
@@ -83,22 +100,22 @@ const AppInner = () => {
       {/* Protected */}
       <Route path="/dashboard" element={
         <ProtectedRoute>
-          <DashboardPage equipments={equipments} setEquipments={setEquipments} />
+          <DashboardPage equipments={equipments} setEquipments={setEquipments} isGlobalMonitoringActive={isGlobalMonitoringActive} />
         </ProtectedRoute>
       } />
       <Route path="/inventory" element={
         <ProtectedRoute>
-          <InventoryPage equipments={equipments} setEquipments={setEquipments} />
+          <InventoryPage equipments={equipments} setEquipments={setEquipments} isGlobalMonitoringActive={isGlobalMonitoringActive} />
         </ProtectedRoute>
       } />
       <Route path="/alerts" element={
         <ProtectedRoute>
-          <AlertsPage equipments={equipments} setEquipments={setEquipments} />
+          <AlertsPage equipments={equipments} setEquipments={setEquipments} isGlobalMonitoringActive={isGlobalMonitoringActive} />
         </ProtectedRoute>
       } />
       <Route path="/reports" element={
         <ProtectedRoute>
-          <ReportsPage equipments={equipments} setEquipments={setEquipments} />
+          <ReportsPage equipments={equipments} setEquipments={setEquipments} isGlobalMonitoringActive={isGlobalMonitoringActive} />
         </ProtectedRoute>
       } />
 

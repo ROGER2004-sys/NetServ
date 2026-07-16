@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Network, Mail, Lock, Eye, EyeOff, Shield, ChevronDown, User } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 const ROLES = [
   'Technicien Support',
@@ -20,6 +22,27 @@ const LoginPage = () => {
   const [form, setForm] = useState({
     email: '', password: '', role: '', displayName: ''
   });
+
+  const [liveNodes, setLiveNodes] = useState(4281);
+  const [totalNodes, setTotalNodes] = useState(5000);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'equipements'), (snapshot) => {
+      let online = 0;
+      let total = snapshot.docs.length;
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.status === 'online' || data.status === 'warning') online++;
+      });
+      if (total > 0) {
+        setLiveNodes(online);
+        setTotalNodes(total);
+      }
+    }, (err) => {
+      console.warn("Could not fetch live nodes (requires auth or network error), using fallback.", err);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleChange = (e) => {
     setAuthError(null);
@@ -99,9 +122,9 @@ const LoginPage = () => {
         <div className="login-stats">
           <div className="login-stat-card">
             <div className="stat-label">Live Nodes</div>
-            <div className="stat-value">4,281</div>
+            <div className="stat-value">{liveNodes.toLocaleString()}</div>
             <div className="stat-bar">
-              <div className="stat-bar-fill" style={{ width: '85%' }} />
+              <div className="stat-bar-fill" style={{ width: `${Math.round((liveNodes / totalNodes) * 100)}%` }} />
             </div>
           </div>
           <div className="login-stat-card">
