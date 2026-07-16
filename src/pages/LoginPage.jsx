@@ -305,33 +305,6 @@ const LoginPage = () => {
               )}
             </button>
 
-            {/* SSO Button (login only) */}
-            {mode === 'login' && (
-              <>
-                <div style={{ textAlign: 'center', fontSize: 12, color: '#94a3b8', marginBottom: 12, position: 'relative' }}>
-                  <span style={{ background: 'white', padding: '0 10px', position: 'relative', zIndex: 1 }}>
-                    OU CONTINUER AVEC
-                  </span>
-                  <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, background: '#e2e8f0', zIndex: 0 }} />
-                </div>
-
-                <button
-                  type="button"
-                  id="sso-btn"
-                  style={{
-                    width: '100%', padding: '11px',
-                    background: 'white', border: '1.5px solid #e2e8f0',
-                    borderRadius: 10, fontSize: 13, fontWeight: 500,
-                    color: '#475569', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    marginBottom: 20
-                  }}
-                >
-                  <Shield size={16} color="#3b82f6" />
-                  Authentification SSO (Okta / Azure)
-                </button>
-              </>
-            )}
           </form>
 
           {/* Toggle mode */}

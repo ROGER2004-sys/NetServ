@@ -9,6 +9,7 @@
 const ping = require('ping');
 const admin = require('firebase-admin');
 const path = require('path');
+const https = require('https');
 
 // ─── Initialisation Firebase Admin ─────────────────────────────────────────
 const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json');
@@ -76,6 +77,65 @@ async function checkAllMachines() {
           });
           const icon = nouveauStatut === 'online' ? '🟢' : '🔴';
           console.log(`   ${icon} ${machine.name || ip} (${ip}) — ${machine.status} → ${nouveauStatut}`);
+
+          // --- NOUVEAU : Si l'équipement tombe OFFLINE, générer alerte et email ---
+          if (nouveauStatut === 'offline') {
+            console.log(`   ⚠️ Génération de l'alerte pour ${machine.name || ip}...`);
+            
+            // 1. Ajouter une alerte dans Firestore
+            await db.collection('alerts').add({
+              equipment_id: docSnap.id,
+              severity: 'CRITICAL',
+              resource: machine.type || 'Equipment',
+              title: `Équipement hors ligne : ${machine.name || ip}`,
+              description: `${machine.name || ip} (${ip}) est actuellement hors ligne (ping échoué).`,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+              status: 'open',
+              acquitted: false
+            });
+
+            // 2. Envoyer un email via EmailJS (si activé)
+            const settingsSnap = await db.collection('settings').doc('global').get();
+            const settings = settingsSnap.data() || {};
+            
+            if (settings.emailNotificationsEnabled) {
+              const rawEmails = settings.techEmails && settings.techEmails.trim() !== '' 
+                ? settings.techEmails 
+                : 'mehdiezzahraoui35@gmail.com';
+              const emails = rawEmails.split(',').map(e => e.trim()).filter(e => e !== '');
+              
+              for (const email of emails) {
+                const emailData = JSON.stringify({
+                  service_id: 'service_rns2ptj',
+                  template_id: 'template_pi8rtp4',
+                  user_id: 'gyGVj23u1CEYktV-6',
+                  template_params: {
+                    to_email: email,
+                    title: `[NetServMonitor] Alerte CRITICAL — ${machine.name || ip} (${ip})`,
+                    name: 'NetServMonitor Agent',
+                    email: email,
+                    message: `Sévérité : CRITICAL\nÉquipement : ${machine.name || ip} (${ip})\nType : ${machine.type || 'Inconnu'}\nDétail : La machine est injoignable par le ping automatique.\nDate : ${new Date().toLocaleString()}`
+                  }
+                });
+
+                const req = https.request({
+                  hostname: 'api.emailjs.com',
+                  path: '/api/v1.0/email/send',
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(emailData)
+                  }
+                }, () => {
+                  console.log(`   ✉️  Email envoyé à ${email}`);
+                });
+
+                req.on('error', (e) => console.error(`   ❌ Erreur email:`, e));
+                req.write(emailData);
+                req.end();
+              }
+            }
+          }
         } else {
           console.log(`   ⚪ ${machine.name || ip} (${ip}) — Statut inchangé (${nouveauStatut})`);
         }

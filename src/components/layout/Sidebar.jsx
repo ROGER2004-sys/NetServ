@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Package, Bell, BarChart3,
-  Plus, HeadphonesIcon, ScrollText, LogOut, Network
+  LogOut, Network
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -13,13 +13,10 @@ const navItems = [
   { path: '/reports', label: 'Reports', icon: BarChart3 },
 ];
 
-const bottomItems = [
-  { path: '/support', label: 'Support', icon: HeadphonesIcon },
-  { path: '/logs', label: 'Logs', icon: ScrollText },
-];
+
 
 const Sidebar = () => {
-  const { userProfile, logout } = useAuth();
+  const { logout } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -58,21 +55,6 @@ const Sidebar = () => {
 
       {/* Bottom section */}
       <div className="sidebar-bottom">
-        <button className="new-request-btn" onClick={() => navigate('/dashboard')}>
-          <Plus size={16} />
-          <span>New Request</span>
-        </button>
-
-        {bottomItems.map(({ path, label, icon: Icon }) => (
-          <NavLink
-            key={path}
-            to={path}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-          >
-            <Icon size={17} />
-            <span>{label}</span>
-          </NavLink>
-        ))}
 
         <button
           onClick={handleLogout}
