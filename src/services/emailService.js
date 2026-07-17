@@ -46,7 +46,7 @@ export const sendAlertEmail = async ({
     : DEFAULT_EMAIL_RECIPIENT;
 
   // Splitting emails to handle multiple recipients correctly with EmailJS
-  const emails = rawEmails.split(',').map(e => e.trim()).filter(e => e !== '');
+  const emails = rawEmails.split(/[\n,]+/).map(e => e.trim()).filter(e => e !== '');
 
   const promises = emails.map(email => 
     emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
@@ -72,7 +72,7 @@ export const sendTestEmail = async () => {
     ? settings.techEmails 
     : DEFAULT_EMAIL_RECIPIENT;
 
-  const emails = rawEmails.split(',').map(e => e.trim()).filter(e => e !== '');
+  const emails = rawEmails.split(/[\n,]+/).map(e => e.trim()).filter(e => e !== '');
 
   const promises = emails.map(email => 
     emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {

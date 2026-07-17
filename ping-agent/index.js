@@ -102,7 +102,7 @@ async function checkAllMachines() {
               const rawEmails = settings.techEmails && settings.techEmails.trim() !== '' 
                 ? settings.techEmails 
                 : 'mehdiezzahraoui35@gmail.com';
-              const emails = rawEmails.split(',').map(e => e.trim()).filter(e => e !== '');
+              const emails = rawEmails.split(/[\n,]+/).map(e => e.trim()).filter(e => e !== '');
               
               for (const email of emails) {
                 const emailData = JSON.stringify({
@@ -124,13 +124,22 @@ async function checkAllMachines() {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
-                    'Content-Length': Buffer.byteLength(emailData)
+                    'Content-Length': Buffer.byteLength(emailData),
+                    'origin': 'http://localhost'
                   }
-                }, () => {
-                  console.log(`   ✉️  Email envoyé à ${email}`);
+                }, (res) => {
+                  let body = '';
+                  res.on('data', (chunk) => { body += chunk; });
+                  res.on('end', () => {
+                    if (res.statusCode === 200) {
+                      console.log(`   ✉️  Email envoyé avec succès à ${email}`);
+                    } else {
+                      console.error(`   ❌ Échec envoi email à ${email} — HTTP ${res.statusCode}: ${body}`);
+                    }
+                  });
                 });
 
-                req.on('error', (e) => console.error(`   ❌ Erreur email:`, e));
+                req.on('error', (e) => console.error(`   ❌ Erreur réseau email:`, e.message));
                 req.write(emailData);
                 req.end();
               }
