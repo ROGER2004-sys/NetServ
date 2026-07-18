@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Settings, HelpCircle, X, Mail, UserCircle2, ShieldCheck } from 'lucide-react';
+import { Bell, Settings, HelpCircle, X, Mail, UserCircle2, ShieldCheck, Lock } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { db } from '../../firebase/config';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastructure, nodes, or IPs...', isGlobalMonitoringActive = false }) => {
-  const { userProfile, currentUser, updateUserProfile, isAdmin } = useAuth();
+  const { userProfile, currentUser, updateUserProfile, updateUserPassword, isAdmin } = useAuth();
   const canManageSettings = isAdmin || String(userProfile?.role || '').toLowerCase().includes('technicien');
   const { notifications } = useNotifications();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -19,6 +19,7 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
   const [savingSettings, setSavingSettings] = useState(false);
   const [displayNameValue, setDisplayNameValue] = useState('');
   const [emailValue, setEmailValue] = useState('');
+  const [passwordValue, setPasswordValue] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMessage, setProfileMessage] = useState('');
 
@@ -370,6 +371,20 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
                 />
               </div>
             </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 12, marginBottom: 6, color: '#475569' }}>Nouveau mot de passe</label>
+              <div style={{ position: 'relative' }}>
+                <Lock size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+                <input
+                  type="password"
+                  value={passwordValue}
+                  onChange={(e) => setPasswordValue(e.target.value)}
+                  placeholder="Laissez vide pour ne pas modifier"
+                  style={{ width: '100%', padding: '10px 12px 10px 38px', borderRadius: 10, border: '1px solid #cbd5e1' }}
+                />
+              </div>
+            </div>
           </div>
 
           <button
@@ -384,13 +399,25 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
                   email: emailValue.trim().toLowerCase()
                 };
                 await updateUserProfile(updates);
+                
+                if (passwordValue) {
+                  await updateUserPassword(passwordValue);
+                  setPasswordValue('');
+                }
+
                 setProfileMessage('Profil mis à jour avec succès.');
                 setTimeout(() => {
                   setProfileMessage('');
                 }, 3000);
               } catch (err) {
                 console.error('Error updating profile:', err);
-                setProfileMessage('Impossible de mettre à jour le profil pour le moment.');
+                if (err.code === 'auth/requires-recent-login') {
+                  setProfileMessage('Reconnexion requise pour modifier le mot de passe.');
+                } else if (err.code === 'auth/weak-password') {
+                  setProfileMessage('Le mot de passe doit contenir au moins 6 caractères.');
+                } else {
+                  setProfileMessage('Impossible de mettre à jour le profil pour le moment.');
+                }
               } finally {
                 setSavingProfile(false);
               }

@@ -4,7 +4,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
-  updateEmail as firebaseUpdateEmail
+  updateEmail as firebaseUpdateEmail,
+  updatePassword as firebaseUpdatePassword
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
@@ -115,6 +116,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Update password
+  const updateUserPassword = async (newPassword) => {
+    if (!currentUser) {
+      throw new Error('Utilisateur non authentifié');
+    }
+    try {
+      await firebaseUpdatePassword(currentUser, newPassword);
+    } catch (err) {
+      console.error('Error updating password:', err);
+      throw err;
+    }
+  };
+
   // Logout
   const logout = async () => {
     await signOut(auth);
@@ -146,6 +160,7 @@ export const AuthProvider = ({ children }) => {
     register,
     logout,
     updateUserProfile,
+    updateUserPassword,
     isAdmin: userProfile?.isAdmin === true
   };
 
