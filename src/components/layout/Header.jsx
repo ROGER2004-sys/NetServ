@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Settings, HelpCircle, Search, X, Mail, UserCircle2, ShieldCheck } from 'lucide-react';
+import { Bell, Settings, HelpCircle, X, Mail, UserCircle2, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { db } from '../../firebase/config';
@@ -9,7 +9,6 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
   const { userProfile, currentUser, updateUserProfile, isAdmin } = useAuth();
   const canManageSettings = isAdmin || String(userProfile?.role || '').toLowerCase().includes('technicien');
   const { notifications } = useNotifications();
-  const [searchVal, setSearchVal] = useState('');
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -54,17 +53,8 @@ const Header = ({ title = 'NetServMonitor', searchPlaceholder = 'Search infrastr
         {settingsAppName}
       </div>
 
-      {/* Search */}
-      <div className="header-search">
-        <Search className="search-icon" size={15} />
-        <input
-          type="text"
-          placeholder={searchPlaceholder}
-          value={searchVal}
-          onChange={e => setSearchVal(e.target.value)}
-          id="global-search"
-        />
-      </div>
+      {/* Spacer (search bar removed) */}
+      <div style={{ flex: 1 }} />
 
       {/* Actions */}
       <div className="header-actions" style={{ position: 'relative' }}>

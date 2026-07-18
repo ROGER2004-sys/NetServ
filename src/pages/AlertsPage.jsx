@@ -467,7 +467,7 @@ const AlertsPage = ({ equipments, isGlobalMonitoringActive }) => {
                   </div>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Email Relay</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>Active: mehdiezzahraoui35@gmail.com</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{emailEnabled ? 'Active' : 'Inactive'}</div>
                   </div>
                 </div>
                 <div style={{ cursor: canManageAlerts ? 'pointer' : 'not-allowed' }} onClick={handleToggleEmail}>

@@ -42,6 +42,7 @@ const DashboardPage = ({ equipments, setEquipments, isGlobalMonitoringActive }) 
   const [latencyData, setLatencyData] = useState(generateLatencyData());
   const [latencyPeriod, setLatencyPeriod] = useState('24H');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Computed KPIs from equipments state
   const totalNodes = equipments.length;
@@ -337,13 +338,13 @@ const DashboardPage = ({ equipments, setEquipments, isGlobalMonitoringActive }) 
       </div>
 
       {/* Live Infrastructure Status */}
-      <div className="card">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '16px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginBottom: 4 }}>Live Infrastructure Status</h3>
             <p style={{ fontSize: 12, color: '#94a3b8' }}>Currently monitoring {totalNodes} nodes</p>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 6, padding: '5px 12px', fontSize: 12 }}>
               <span className="live-dot" style={{ marginRight: 5 }} />
               <strong>{onlineNodes}</strong> Online
@@ -360,20 +361,30 @@ const DashboardPage = ({ equipments, setEquipments, isGlobalMonitoringActive }) 
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#6366f1', marginRight: 5 }} />
               <strong>{maintenanceNodes}</strong> Maint.
             </div>
-            <select
-              className="btn-primary"
-              id="filter-view-select"
-              style={{ padding: '6px 24px 6px 14px', fontSize: 12, cursor: 'pointer', outline: 'none' }}
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-            >
-              <option value="all" style={{ color: '#0f172a', background: '#fff' }}>≡ Filter View</option>
-              <option value="online" style={{ color: '#0f172a', background: '#fff' }}>Online</option>
-              <option value="offline" style={{ color: '#0f172a', background: '#fff' }}>Offline</option>
-              <option value="warning" style={{ color: '#0f172a', background: '#fff' }}>Warning</option>
-              <option value="maintenance" style={{ color: '#0f172a', background: '#fff' }}>Maintenance</option>
-            </select>
           </div>
+        </div>
+        <div style={{ padding: '10px 18px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input
+            className="form-input"
+            style={{ width: 220, padding: '7px 12px', fontSize: 12 }}
+            placeholder="Rechercher..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            id="dashboard-search"
+          />
+          <select
+            className="form-select"
+            id="filter-view-select"
+            style={{ width: 140, padding: '7px 10px', fontSize: 12 }}
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
+            <option value="all">Tous les statuts</option>
+            <option value="online">Online</option>
+            <option value="offline">Offline</option>
+            <option value="warning">Warning</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
         </div>
 
         <table className="data-table">
@@ -390,6 +401,7 @@ const DashboardPage = ({ equipments, setEquipments, isGlobalMonitoringActive }) 
           <tbody>
             {equipments
               .filter(eq => filterStatus === 'all' || eq.status === filterStatus)
+              .filter(eq => !searchTerm || eq.name.toLowerCase().includes(searchTerm.toLowerCase()) || eq.ip.includes(searchTerm))
               .slice(0, 8)
               .map(eq => (
                 <tr key={eq.id}>
