@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, Bot } from 'lucide-react';
 
-const OLLAMA_API_URL = 'http://localhost:11434/api/chat';
-const MODEL_NAME = 'llama3.2:3b';
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_API_KEY = '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';
+const MODEL_NAME = 'llama-3.1-8b-instant';
 const SYSTEM_PROMPT = "Tu es un assistant virtuel général, utile et poli. Tu réponds de manière claire et concise aux questions de l'utilisateur.";
 
 const AIChatbot = () => {
@@ -13,7 +14,7 @@ const AIChatbot = () => {
     { role: 'assistant', content: '👋 Bonjour ! Je suis votre assistant IA NetServ (Llama 3.2). Comment puis-je vous aider ?' }
   ]);
   
-  // Historique complet pour l'API Ollama (inclut le prompt système)
+  // Historique complet pour l'API (inclut le prompt système)
   const [apiHistory, setApiHistory] = useState([
     { role: 'system', content: SYSTEM_PROMPT }
   ]);
@@ -43,24 +44,25 @@ const AIChatbot = () => {
     setIsTyping(true);
 
     try {
-      const response = await fetch(OLLAMA_API_URL, {
+      const response = await fetch(GROQ_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GROQ_API_KEY}`
         },
         body: JSON.stringify({
           model: MODEL_NAME,
-          messages: newApiHistory,
-          stream: false
+          messages: newApiHistory
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Erreur réseau: ${response.status}`);
+        const errData = await response.text();
+        throw new Error(`Erreur ${response.status}: ${errData}`);
       }
 
       const data = await response.json();
-      const botReply = data.message.content;
+      const botReply = data.choices[0].message.content;
 
       // Ajouter la réponse à l'historique de l'API
       setApiHistory(prev => [...prev, { role: 'assistant', content: botReply }]);
@@ -68,8 +70,8 @@ const AIChatbot = () => {
       // Afficher la réponse dans l'interface
       setMessages(prev => [...prev, { role: 'assistant', content: botReply }]);
     } catch (error) {
-      console.error("Ollama API Error:", error);
-      const errorMsg = "❌ Désolé, je n'arrive pas à joindre le serveur d'IA (Ollama). Vérifiez qu'il est bien lancé localement.";
+      console.error("Groq API Error:", error);
+      const errorMsg = `❌ Désolé, je n'arrive pas à joindre le serveur d'IA (Groq Cloud). Détail: ${error.message}`;
       setMessages(prev => [...prev, { role: 'assistant', content: errorMsg }]);
       // En cas d'erreur, on n'ajoute pas le message d'erreur à apiHistory pour ne pas perturber le contexte LLM.
     } finally {
@@ -120,7 +122,7 @@ const AIChatbot = () => {
                 <div style={{ fontWeight: 600, fontSize: '13px' }}>Assistant IA NetServ</div>
                 <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span className="live-dot" style={{ width: 6, height: 6 }} />
-                  En ligne (Ollama)
+                  En ligne (Groq)
                 </div>
               </div>
             </div>
