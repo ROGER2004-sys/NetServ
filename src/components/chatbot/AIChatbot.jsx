@@ -11,7 +11,7 @@ const AIChatbot = () => {
   
   // Messages pour l'affichage (sans le prompt système)
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: '👋 Bonjour ! Je suis votre assistant IA NetServ (Llama 3.2). Comment puis-je vous aider ?' }
+    { role: 'assistant', content: '👋 Bonjour ! Je suis votre assistant IA NetServ. Comment puis-je vous aider ?' }
   ]);
   
   // Historique complet pour l'API (inclut le prompt système)
