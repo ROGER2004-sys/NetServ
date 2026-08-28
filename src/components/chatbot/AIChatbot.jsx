@@ -3,7 +3,7 @@ import { MessageSquare, X, Send, Bot } from 'lucide-react';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_API_KEY = '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';
-const MODEL_NAME = 'llama-3.1-8b-instant';
+const MODEL_NAME = 'openai/gpt-oss-20b';
 const SYSTEM_PROMPT = "Tu es un assistant virtuel général, utile et poli. Tu réponds de manière claire et concise aux questions de l'utilisateur.";
 
 const AIChatbot = () => {

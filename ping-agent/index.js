@@ -6,8 +6,8 @@
  * - Si isGlobalMonitoringActive === false → Aucun ping, les statuts restent figés
  */
 
-const ping = require('ping');
-const admin = require('firebase-admin');
+const ping = require('ping');//Bibliothèque permettant d'envoyer des requêtes ICMP
+const admin = require('firebase-admin');//SDK Firebase côté serveur pour interagir avec Firestore en tant qu'administrateur.
 const path = require('path');
 const https = require('https');
 
@@ -81,7 +81,7 @@ async function checkAllMachines() {
           // --- NOUVEAU : Si l'équipement tombe OFFLINE, générer alerte et email ---
           if (nouveauStatut === 'offline') {
             console.log(`   ⚠️ Génération de l'alerte pour ${machine.name || ip}...`);
-            
+
             // 1. Ajouter une alerte dans Firestore
             await db.collection('alerts').add({
               equipment_id: docSnap.id,
@@ -97,13 +97,13 @@ async function checkAllMachines() {
             // 2. Envoyer un email via EmailJS (si activé)
             const settingsSnap = await db.collection('settings').doc('global').get();
             const settings = settingsSnap.data() || {};
-            
+
             if (settings.emailNotificationsEnabled) {
-              const rawEmails = settings.techEmails && settings.techEmails.trim() !== '' 
-                ? settings.techEmails 
+              const rawEmails = settings.techEmails && settings.techEmails.trim() !== ''
+                ? settings.techEmails
                 : 'mehdiezzahraoui35@gmail.com';
               const emails = rawEmails.split(/[\n,]+/).map(e => e.trim()).filter(e => e !== '');
-              
+
               for (const email of emails) {
                 const emailData = JSON.stringify({
                   service_id: 'service_rns2ptj',
